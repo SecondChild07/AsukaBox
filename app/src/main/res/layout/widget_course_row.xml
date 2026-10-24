@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件里的一节课：色条 + 节次 + 课程名 / 地点 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="6dp"
+    android:background="@drawable/widget_row_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="9dp"
+    android:paddingVertical="6dp">
+
+    <ImageView
+        android:id="@+id/row_bar"
+        android:layout_width="3dp"
+        android:layout_height="24dp"
+        android:contentDescription="@null"
+        android:src="@drawable/widget_bar" />
+
+    <TextView
+        android:id="@+id/row_section"
+        android:layout_width="34dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="9dp"
+        android:maxLines="1"
+        android:textColor="@color/widget_muted"
+        android:textSize="9.5sp" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/row_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/widget_text"
+            android:textSize="11.5sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/row_room"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/widget_muted"
+            android:textSize="9.5sp" />
+    </LinearLayout>
+</LinearLayout>

@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.navigation/
+.externalNativeBuild/
+.cxx/
+
+# Kotlin
+.kotlin/
+
+# 本机配置：SDK 路径 + 发布签名口令，永远不进仓库
+local.properties
+
+# 签名文件：绝对不要提交
+*.jks
+*.keystore
+!debug.keystore
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+
+# 构建产物
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# 日志
+*.log
