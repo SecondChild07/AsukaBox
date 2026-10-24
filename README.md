@@ -17,7 +17,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-3DBE6B">
 </p>
 
-> 贴着 NFC 卡片点一下，把卡里的签到链接丢给支付宝；顺带把正方教务的课表抓下来做成一张桌面小卡片。
+> 贴着 NFC 卡片点一下，把卡里的签到链接丢给支付宝；顺带把正方教务的课表抓下来做成一张桌面小卡片；需要的话还能把手机定位固定在任意坐标。
 > 界面是纯 Compose 手写的 Liquid Glass，**没有引任何第三方 UI 库**。
 
 **[⬇️ 下载 APK](https://github.com/SecondChild07/AsukaBox/releases/latest)** · 2.2 MB · Android 7.0+
@@ -26,7 +26,7 @@
 
 ## 它干什么
 
-两个功能。除课表导入那一下，都不联网。
+三个功能。除课表导入那一下，都不联网。
 
 ### 1. NFC 签到
 
@@ -212,6 +212,28 @@ keytool -genkeypair -keystore app/release.jks -alias mykey \
 
 **但开源之后要清楚：** 上面这些检测逻辑现在都公开了，绕过成本比闭源时低不少。真挡得住的是「改个图标重新打包发出去」这种人（签名校验一关就死），挡不住拿 Frida 专门盯你的人。要更强只能上 native 层校验或者商业壳。
 
+## 虚拟定位
+
+<p align="center"><img src="docs/screenshot-location.png" width="270" alt="虚拟定位"></p>
+
+功能列表第三项。把手机的 GPS / 网络定位一起钉在某个经纬度上，用来打卡、测试、或者给 App 演一个"我在别处"。
+
+没有 root，也没用 Xposed —— 走的是 Android 自带的 **test provider** 这条路：
+
+1. 你在系统「开发者选项 → 选择模拟位置信息应用」里把明日箱选上（这一步只能手动做，任何 App 都改不了这个开关）
+2. 明日箱往 `gps` 和 `network` 两个 provider 里每秒灌一次坐标
+3. 别的 App 通过 `LocationManager` 拿到的就是这份坐标
+
+所以它只改「模拟位置」这一层，不碰系统文件、不装模块。用 `adb shell dumpsys location` 能看到 `gps provider [mock]`。
+
+坐标怎么给：手填、从剪贴板粘（会自己从一段文字里抠出「纬度, 经度」）、或者点常用地点（天安门 / 上海外滩 / 广州塔）。
+
+几个必须说清楚的限制：
+
+- **停就没了**。坐标得持续灌，服务一停系统立刻回到真实定位。所以这里用的是前台服务 + 一条常驻通知
+- **不是所有 App 都吃这套**。打车、考勤这类会检查 `Location.isFromMockProvider()`，看到 `mock` 标记就可能拒单或提示。这个标记是系统打的，改不了（也不该改）
+- **不能改蓝牙 / WiFi 定位**。那些靠扫描周边设备自己算，不走这两个 provider
+- 需要通知权限（Android 13+）才能看到那条常驻通知，不给也能用，只是通知栏看不到状态
 ## 桌面小组件
 
 设置页里有「放到桌面」，点了会走系统的 `requestPinAppWidget` 流程，确认一下就添加到桌面；也可以长按桌面 → 小组件 → 找「明日箱」。

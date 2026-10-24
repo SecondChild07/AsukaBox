@@ -224,3 +224,18 @@ fun DrawScope.calendarIcon(color: Color) {
         )
     }
 }
+
+
+/** 虚拟定位：定位针（针尖 + 外环 + 中心点） */
+fun DrawScope.locationIcon(color: Color) {
+    val s = size.minDimension
+    val cx = size.width / 2f
+    val cy = s * 0.40f
+    val r = s * 0.26f
+    val stroke = s * 0.105f
+    val tipY = s * 0.93f
+    drawLine(color, Offset(cx - r * 0.70f, cy + r * 0.64f), Offset(cx, tipY), stroke, StrokeCap.Round)
+    drawLine(color, Offset(cx + r * 0.70f, cy + r * 0.64f), Offset(cx, tipY), stroke, StrokeCap.Round)
+    drawCircle(color, r, Offset(cx, cy), style = Stroke(width = stroke))
+    drawCircle(color, r * 0.30f, Offset(cx, cy))
+}

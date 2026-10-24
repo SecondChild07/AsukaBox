@@ -68,6 +68,13 @@ val featureList: List<Feature> = listOf(
         color = Color(0xFF14A8A0),
         draw = { calendarIcon(it) },
     ),
+    Feature(
+        id = "location",
+        name = "虚拟定位",
+        desc = "把手机定位固定在任意坐标",
+        color = Color(0xFF7B61FF),
+        draw = { locationIcon(it) },
+    ),
 )
 
 /**

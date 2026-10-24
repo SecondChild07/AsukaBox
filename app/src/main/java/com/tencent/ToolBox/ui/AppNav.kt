@@ -130,6 +130,7 @@ private fun FeatureDetail(
             when (id) {
                 "nfc" -> SignScreen(activity = activity, store = store)
                 "timetable" -> TimetableScreen(store = timetableStore)
+                "location" -> LocationScreen()
                 else -> Unit
             }
         }
