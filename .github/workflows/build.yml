@@ -46,6 +46,11 @@ jobs:
           echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > "${GITHUB_WORKSPACE}/release.jks"
           ls -l "${GITHUB_WORKSPACE}/release.jks"
 
+      - name: Unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build APK
         env:
           RELEASE_STORE_FILE: ${{ github.workspace }}/release.jks

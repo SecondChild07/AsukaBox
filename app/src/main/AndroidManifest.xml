@@ -30,6 +30,7 @@
     <application
         android:name=".BoxApp"
         android:allowBackup="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:allowClearUserData="true"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
@@ -37,7 +38,6 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.LiquidToolbox"
-        android:usesCleartextTraffic="true"
         tools:ignore="DataExtractionRules">
         <activity
             android:name=".MainActivity"

@@ -23,10 +23,9 @@
     public static *** w(...);
     public static *** e(...);
 }
--assumenosideeffects class android.os.Debug {
-    public static *** isDebuggerConnected();
-    public static *** waitingForDebugger();
-}
+# 注意：不要对 android.os.Debug 用 -assumenosideeffects。
+# R8 会据此把 isDebuggerConnected() / waitingForDebugger() 的调用整个删掉、用默认值 false 顶替，
+# 等于把 Guard 里的调试器检测这道闸自己擦掉了。擦 Log 可以（那些方法本来只返回 int），擦 Debug 是自伤。
 
 # ===== 缺类告警 =====
 -dontwarn org.jetbrains.annotations.**
@@ -34,5 +33,5 @@
 -dontwarn androidx.**
 
 # 入口类保留（Manifest 引用，R8 本来也会 handle，这里显式声明防误删）
--keep class com.tencent.ToolBox.BoxApp { *; }
--keep class com.tencent.ToolBox.MainActivity { *; }
+-keep class com.Auska.ToolBox.BoxApp { *; }
+-keep class com.Auska.ToolBox.MainActivity { *; }

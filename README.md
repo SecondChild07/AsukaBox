@@ -185,6 +185,25 @@ cd AsukaBox
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## 测试
+
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
+19 个单元测试，全部对着纯函数打，不需要真机也不需要模拟器：
+
+| 测试 | 覆盖 |
+|---|---|
+| `CourseWeeksTest` | `zcd` 周次串解析 —— 区间、跳周、**段级单双周**、`第16周` 这种单周写法、中文逗号分号、空串 |
+| `UrlPickerTest` | 链接打分与排序、`\u002f` 转义还原、去重、短串不误判 |
+| `CoordinateTest` | GCJ-02 ↔ WGS-84 双向转换、往返误差 < 1 米、境外坐标原样返回 |
+| `WidgetRowsTest` | 小组件行数按高度换算，含上限 6 行与地板 1 行 |
+
+单双周那条是回归测试：早期版本把「有没有双字」当成整串标志，`1-3周,6-8周(双),9-18周` 里 `9-18` 整段被砍掉，表现为「第 9 周之后某门课凭空消失」。
+
+CI 里 `Unit tests` 是独立一步，挂了不会去构建 APK。
+
 ## 签名
 
 发布签名不写死在代码里。两种方式提供，优先级都行：
@@ -218,7 +237,7 @@ keytool -genkeypair -keystore app/release.jks -alias mykey \
 - **R8 混淆**：`-repackageclasses ''` 把所有类塞进默认包，`-overloadaggressively` 把方法重载到极致。注意 AGP 9 的 `optimization { enable = true }` **只做优化不做混淆**，`isMinifyEnabled` 才是开关，而且 `packageScope` 里必须把自己的包名写进去，否则业务类会被排除在外
 - **字符串加密**：包名、检测路径、业务域名全 xor 加密，运行时才还原。这个不是为了「防住谁」，主要是让别人 `strings` 一下看不出这 App 在干什么
 - **运行时四道闸**：包名校验 → 签名校验 → 调试器检测（`TracerPid` + `isDebuggerConnected`）→ 注入框架检测（`maps` 里的 frida/xposed/substrate、`/data/local/tmp/frida-server`、`Class.forName("...XposedBridge")`）
-- **失败即静默**：不弹窗不报错，清掉 SharedPreferences 然后 `killProcess`，不给调试入口
+- **失败只停用、不毁数据**：检测没过时把界面换成一段说明、功能停掉，**不删课表也不杀进程**。早期版本是「清空 SharedPreferences + killProcess」，后来想明白这个取舍不对：装过 LSPosed 的机器、某些 ROM 的 maps 里带 gum 字样都会误报，让用户凭空丢掉全部数据，代价远大于它挡住的东西（代码都开源了，真想改的人早绕过去了）
 
 **但开源之后要清楚：** 上面这些检测逻辑现在都公开了，绕过成本比闭源时低不少。真挡得住的是「改个图标重新打包发出去」这种人（签名校验一关就死），挡不住拿 Frida 专门盯你的人。要更强只能上 native 层校验或者商业壳。
 
@@ -295,12 +314,20 @@ object CoordinateConverter {
 ## 隐私
 
 - 除了导入课表时和你学校的教务系统通信，不联网，没有统计，没有日志上传
+- **默认只走 https**：`res/xml/network_security_config.xml` 里 `base-config` 关掉了明文，只对 `edu.cn` / `edu` 域名和本机回环开了口子 —— 不少学校教务只有 http 入口，密码虽然先过 RSA，但 JSESSIONID、学号、课表 JSON 在链路上是明文的。你学校要是不在 edu 域名下，把域名加进那个列表
 - 读到的链接、账号、密码、课表都只存在 App 私有目录里，且都是密文（见上面「数据怎么存的」）
 - 权限一共五个，都不是「悄悄翻你东西」：`NFC`（读卡）、`ACCESS_MOCK_LOCATION`（进开发者选项的模拟位置列表）、`ACCESS_FINE_LOCATION` + `ACCESS_COARSE_LOCATION`（Android 10~13 上 location 类型前台服务的硬性要求，App 自己不读定位）、`POST_NOTIFICATIONS`（模拟定位时那条常驻通知）
 
-## 免责
+## 边界
 
-只用来读你自己有权使用的 NFC 标签。拿它去刷别人的签到活动，后果自负。
+这个工具本身是中性的，但有三件事性质不同，分开说：
+
+- **读自己的 NFC 标签、导入自己的课表** —— 这就是它的设计用途，随便用
+- **替别人刷签到** —— 属于欺诈。别做，做了也别说是这软件教的
+- **虚拟定位去打卡 / 应付考勤** —— 这是考勤作弊，涉及学籍或劳动合同，后果和上面两件不是一个量级。功能给了，用不用、用到哪儿，是你自己的判断
+- **自动登录教务系统** —— 多数学校的规章明确禁止第三方程序代登录，已有账号被封的先例。导入用的是你自己的账号密码，只在本机跑，但风险仍在
+
+一句话：工具不替你做决定。
 
 ## License
 

@@ -41,13 +41,13 @@ val certSha256: String = if (hasReleaseKey) runCatching {
 }.getOrDefault("") else ""
 
 android {
-    namespace = "com.tencent.ToolBox"
+    namespace = "com.Auska.ToolBox"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.tencent.ToolBox"
+        applicationId = "com.Auska.ToolBox"
         minSdk = 24
         targetSdk = 37
         versionCode = 104
@@ -84,7 +84,7 @@ android {
                 enable = true
                 packageScope = setOf(
                     "androidx.**", "kotlin.**", "kotlinx.**",
-                    "com.tencent.**", "com.tencent.ToolBox.**",
+                    "com.tencent.**", "com.Auska.ToolBox.**",
                 )
             }
             proguardFiles(
