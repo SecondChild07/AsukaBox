@@ -85,6 +85,21 @@ class CourseWidgetProvider : AppWidgetProvider() {
                 .filter { it.day == dow }
                 .sortedBy { it.startSection }
 
+            // 今天没课就翻到最近有课的那一天显示，别让卡片空着 —— 不然周末永远是「今天没课」
+            val fallback = if (todayCourses.isEmpty()) upcomingDay(timetable, week, dow) else null
+            val list = fallback?.second ?: todayCourses
+            val label = when {
+                fallback == null -> "今天"
+                fallback.first - dow == 1 || fallback.first - dow == -6 -> "明天"
+                else -> "周${DAY_NAMES[fallback.first - 1]}"
+            }
+            val shownDate = if (fallback == null) {
+                TermCalendar.monthDay(today)
+            } else {
+                val cal = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, fallback.first - dow) }
+                TermCalendar.monthDay(cal)
+            }
+
             // 按 launcher 实际给的格子高度决定放几行，用户把卡片拉大就能多看几门
             val maxHeightDp = manager.getAppWidgetOptions(id)
                 .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 160)
@@ -92,34 +107,24 @@ class CourseWidgetProvider : AppWidgetProvider() {
 
             views.setTextViewText(
                 R.id.widget_header,
-                "第 $week 周 · ${TermCalendar.monthDay(today)} 周${DAY_NAMES[dow - 1]}",
+                "第 $week 周 · $shownDate 周${DAY_NAMES[(if (fallback == null) dow else fallback.first) - 1]}",
             )
             views.removeAllViews(R.id.widget_content)
 
-            if (todayCourses.isEmpty()) {
-                val next = nextCourse(timetable, week, dow)
-                // 空态：标题收起来，「今天没课」和「下次」合成一块在中间区域垂直居中
+            if (list.isEmpty()) {
                 views.setViewVisibility(R.id.widget_title, View.GONE)
                 views.setViewVisibility(R.id.widget_footer, View.GONE)
                 views.addView(
                     R.id.widget_content,
-                    hintText(
-                        context,
-                        "今天没课",
-                        if (next == null) {
-                            "这一周都空着，休息吧"
-                        } else {
-                            "下次：${next.second} ${next.first.startSection}-${next.first.endSection} 节 · ${next.first.name}"
-                        },
-                    ),
+                    hintText(context, "这周没课", "打开 App 检查一下课表或重新导入"),
                 )
             } else {
                 views.setViewVisibility(R.id.widget_title, View.VISIBLE)
-                views.setTextViewText(R.id.widget_title, "今天 ${todayCourses.size} 门")
-                todayCourses.take(maxRows).forEach { course ->
+                views.setTextViewText(R.id.widget_title, "$label ${list.size} 门")
+                list.take(maxRows).forEach { course ->
                     views.addView(R.id.widget_content, buildRow(context, course))
                 }
-                val rest = todayCourses.size - maxRows
+                val rest = list.size - maxRows
                 if (rest > 0) {
                     views.setTextViewText(R.id.widget_footer, "还有 $rest 门 · 点开看整周")
                     views.setViewVisibility(R.id.widget_footer, View.VISIBLE)
@@ -155,15 +160,13 @@ class CourseWidgetProvider : AppWidgetProvider() {
         }
 
         /** 从明天往后数 7 天，找最近的一门 —— 用来填「今天没课」时的脚注，返回 (课, 日期说法) */
-        private fun nextCourse(timetable: Timetable, week: Int, todayDow: Int): Pair<Course, String>? {
+        /** 今天没课时，往前找最近一个有课的那天，返回 (星期几, 那天的课) */
+        private fun upcomingDay(timetable: Timetable, week: Int, todayDow: Int): Pair<Int, List<Course>>? {
             val courses = timetable.ofWeek(week)
             for (offset in 1..7) {
                 val day = ((todayDow - 1 + offset) % 7) + 1
-                val hit = courses.filter { it.day == day }.minByOrNull { it.startSection }
-                if (hit != null) {
-                    val label = if (offset == 1) "明天" else "周${DAY_NAMES[day - 1]}"
-                    return hit to label
-                }
+                val list = courses.filter { it.day == day }.sortedBy { it.startSection }
+                if (list.isNotEmpty()) return day to list
             }
             return null
         }
