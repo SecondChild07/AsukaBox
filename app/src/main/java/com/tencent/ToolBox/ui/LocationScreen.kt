@@ -205,7 +205,7 @@ fun LocationScreen(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = if (allowed) {
-                        "已获得模拟位置权限 · gps 与 network 两个来源一起改"
+                        "已获得模拟位置权限 · 系统里所有定位来源一起改"
                     } else {
                         "还没有模拟位置权限，点下面的按钮去开发者选项里把明日箱选上"
                     },

@@ -155,6 +155,12 @@ class MockLocationService : Service() {
 
     /** 把 gps / network 两个 provider 注册成 test provider（重复调用不会报错） */
     private fun ensureProviders(manager: LocationManager) {
+        // 先把系统里存在、但我们还没纳入的 provider 全部拉进来 —— fused 就是这一步补上的
+        runCatching {
+            manager.allProviders
+                .filter { it != LocationManager.PASSIVE_PROVIDER && it !in PROVIDERS }
+                .forEach { PROVIDERS.add(it) }
+        }
         PROVIDERS.forEach { name ->
             runCatching {
                 manager.addTestProvider(
@@ -217,7 +223,11 @@ class MockLocationService : Service() {
         private const val NOTIFICATION_ID = 2001
         private const val INTERVAL_MS = 1000L
 
-        private val PROVIDERS = listOf(
+        /**
+         * 默认只覆盖 gps / network 两个。运行时会再加上自检通过的额外 provider
+         * （有些 ROM 上还有 fused / passive，高德之类的 SDK 会优先读 fused）
+         */
+        private val PROVIDERS = mutableListOf(
             LocationManager.GPS_PROVIDER,
             LocationManager.NETWORK_PROVIDER,
         )
