@@ -50,7 +50,7 @@ android {
         applicationId = "com.Auska.ToolBox"
         minSdk = 24
         targetSdk = 37
-        versionCode = 104
+        versionCode = 105
         versionName = "1.0"
 
         // 空字符串 = 未配置签名，运行时跳过签名校验
