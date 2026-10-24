@@ -57,7 +57,10 @@ internal object Guard {
         return true
     }
 
-    private fun signatureOk(ctx: Context): Boolean = try {
+    private fun signatureOk(ctx: Context): Boolean { return try {
+        // debug 包一律放行：这样开发机不需要正式 keystore，debug 也能用自己的 debug 签名
+        // （以前为了绕过这条校验，debug 被迫和 release 同签名，等于让 debug 包和正式版同级）
+        if (BuildConfig.DEBUG) return true
         // 构建时由 keystore 算出并注入；为空说明没配签名，只放行 debug 构建
         val expected = BuildConfig.CERT_SHA256.lowercase()
         if (expected.isBlank()) {
@@ -76,7 +79,7 @@ internal object Guard {
         }
     } catch (_: Throwable) {
         false
-    }
+    } }
 
     private fun digest(bytes: ByteArray): String {
         val md = MessageDigest.getInstance("SHA-256").digest(bytes)

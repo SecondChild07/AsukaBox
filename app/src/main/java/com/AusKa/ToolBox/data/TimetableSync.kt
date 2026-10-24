@@ -31,6 +31,9 @@ object TimetableSync {
         /** 拉到了，已存好 */
         data object Updated : Result
 
+        /** 拉到了但是这个学期还没有课，旧课表原样保留 */
+        data object EmptyTerm : Result
+
         /** 没有可用账号，什么都不做 */
         data object NoAccount : Result
 
@@ -48,9 +51,14 @@ object TimetableSync {
     suspend fun refresh(store: TimetableStore, force: Boolean = false): Result = withContext(Dispatchers.IO) {
         if (!store.hasAccount) return@withContext Result.NoAccount
 
-        val last = store.lastSyncAt
-        if (!force && last > 0 && System.currentTimeMillis() - last < MIN_INTERVAL_MS) {
-            return@withContext Result.Skipped
+        // 成功过就 30 分钟一次；连续失败按 5/10/20/40/60 分钟退避，
+        // 否则密码改错的用户每开一次 App 就撞一次登录，容易被学校的连续失败锁定
+        if (!force && store.shouldSkip()) return@withContext Result.Skipped
+        if (!force && store.failCount >= 3 && store.lastAttemptAt > 0 &&
+            System.currentTimeMillis() - store.lastAttemptAt > 6 * 60 * 60 * 1000L
+        ) {
+            // 停了 6 小时以上，给一次机会再试
+            store.failCount = 0
         }
 
         if (!gate.compareAndSet(false, true)) return@withContext Result.Failed(BUSY)
@@ -63,27 +71,28 @@ object TimetableSync {
             val cached = store.load()
             val year: Int
             val term: Int
-            if (cached != null) {
+            if (cached != null && !TermCalendar.isTermOver(cached)) {
+                // 还在学期内，继续拉这一份 —— 用户手动导入的旧学期不该被自动改掉
                 year = cached.year
                 term = cached.term
             } else {
-                val (y, t) = store.termKey.split('-').let { parts ->
-                    (parts.getOrNull(0)?.toIntOrNull() ?: 0) to (parts.getOrNull(1)?.toIntOrNull() ?: 0)
+                // 学期已经过完（或者压根没导入过），按当前日期推一个
+                val guess = TermCalendar.defaultTerm()
+                val keyParts = store.termKey.split('-')
+                val y = keyParts.getOrNull(0)?.toIntOrNull() ?: 0
+                val t = keyParts.getOrNull(1)?.toIntOrNull() ?: 0
+                val keyTermOver = if (y > 0 && t > 0) {
+                    val probe = Timetable(courses = emptyList(), year = y, term = t)
+                    TermCalendar.isTermOver(probe)
+                } else {
+                    true
                 }
-                if (y > 0 && t > 0) {
+                if (!keyTermOver) {
                     year = y
                     term = t
                 } else {
-                    // 没导入过就按当前月份猜一个学期，和导入弹窗的默认值保持一致
-                    val cal = java.util.Calendar.getInstance()
-                    val m = cal.get(java.util.Calendar.MONTH) + 1
-                    if (m >= 8) {
-                        year = cal.get(java.util.Calendar.YEAR)
-                        term = 3
-                    } else {
-                        year = cal.get(java.util.Calendar.YEAR) - 1
-                        term = 12
-                    }
+                    year = guess.first
+                    term = guess.second
                 }
             }
 
@@ -94,7 +103,12 @@ object TimetableSync {
             if (cachedCookie.isNotBlank()) {
                 val reused = JwglxtSession(base, initialCookie = cachedCookie)
                 fresh = runCatching { reused.fetchTimetable(year, term) }.getOrNull()
-                if (fresh != null) session = reused
+                if (fresh != null) {
+                    session = reused
+                } else {
+                    // 过期的 cookie 留着没用，清掉免得每次启动先打一次注定失败的请求
+                    store.sessionCookie = ""
+                }
             }
 
             if (fresh == null) {
@@ -116,10 +130,10 @@ object TimetableSync {
             val startDate = cached?.startDate?.takeIf { it.isNotBlank() }
                 ?: TermCalendar.format(TermCalendar.estimateStart(year, term))
 
-            store.save(tt.copy(startDate = startDate))
+            val wrote = store.save(tt.copy(startDate = startDate))
             store.termKey = "$year-$term"
             store.markSync(true)
-            Result.Updated
+            if (!wrote) Result.EmptyTerm else Result.Updated
         } catch (e: JwglxtException) {
             store.markSync(false)
             Result.Failed(e.message ?: "同步失败")

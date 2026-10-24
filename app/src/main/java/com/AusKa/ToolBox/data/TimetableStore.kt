@@ -68,13 +68,45 @@ class TimetableStore private constructor(context: Context) {
         get() = readField(KEY_SESSION) { it.contains('=') }
         set(value) = prefs.edit().putString(KEY_SESSION, SecretBox.seal(value)).apply()
 
-    /** 记一次自动同步的结果；成功才推进 lastSyncAt */
+    /** 上一次「尝试同步」的时间，不论成败。退避用它算，不然失败就等于没节流。 */
+    var lastAttemptAt: Long
+        get() = prefs.getLong(KEY_ATTEMPT, 0L)
+        private set(value) = prefs.edit().putLong(KEY_ATTEMPT, value).apply()
+
+    /** 连续失败次数，用来做指数退避；成功一次清零。 */
+    var failCount: Int
+        get() = prefs.getInt(KEY_FAILS, 0)
+        set(value) = prefs.edit().putInt(KEY_FAILS, value).apply()
+
+    /**
+     * 记一次同步结果。
+     *
+     * 失败也要推进 [lastAttemptAt] —— 否则「失败不节流」，
+     * 密码改错的用户每开一次 App 就撞一次登录，正方普遍有连续失败锁定。
+     */
     fun markSync(ok: Boolean) {
+        val now = System.currentTimeMillis()
+        val nextFails = if (ok) 0 else (failCount + 1).coerceAtMost(9)
         prefs.edit()
             .putBoolean(KEY_SYNC_OK, ok)
-            .putLong(KEY_SYNCED, if (ok) System.currentTimeMillis() else lastSyncAt)
+            .putLong(KEY_SYNCED, if (ok) now else lastSyncAt)
+            .putLong(KEY_ATTEMPT, now)
+            .putInt(KEY_FAILS, nextFails)
             .apply()
         _syncOk.value = ok
+    }
+
+    /**
+     * 这次该不该跳过。成功过就 30 分钟一次；连续失败则 5 → 10 → 20 → 40 → 60 分钟退避。
+     */
+    fun shouldSkip(now: Long = System.currentTimeMillis()): Boolean {
+        val fails = failCount
+        val wait = if (fails == 0) {
+            30 * 60 * 1000L
+        } else {
+            (5L * 60_000L shl (fails - 1).coerceAtMost(4)).coerceAtMost(60L * 60_000L)
+        }
+        return lastAttemptAt > 0 && now - lastAttemptAt < wait
     }
 
     /** 有没有可用的账号（三个字段都齐） */
@@ -84,7 +116,16 @@ class TimetableStore private constructor(context: Context) {
     /** 读取缓存的课表；结果来自内存里那份，磁盘上存的是密文 */
     fun load(): Timetable? = _timetable.value
 
-    fun save(t: Timetable) {
+    /**
+     * 存课表。
+     *
+     * **空课表不覆盖已有数据** —— 选了还没排课的学期、选错学期、学校 kbList 返回空数组都会得到空表，
+     * 早期实现会直接把它写进盘，用户视角就是「课表自己没了」。
+     *
+     * @return 真的写了吗
+     */
+    fun save(t: Timetable): Boolean {
+        if (t.courses.isEmpty() && _timetable.value != null) return false
         val normalized = if (t.startDate.isBlank()) {
             t.copy(startDate = TermCalendar.format(TermCalendar.estimateStart(t.year, t.term)))
         } else {
@@ -93,11 +134,36 @@ class TimetableStore private constructor(context: Context) {
         prefs.edit().putString(KEY_TABLE, SecretBox.seal(toJson(normalized).toString())).apply()
         _timetable.value = normalized
         CourseWidgetProvider.refreshAll(appContext)
+        return true
     }
 
     fun clear() {
         prefs.edit().remove(KEY_TABLE).apply()
         _timetable.value = null
+        CourseWidgetProvider.refreshAll(appContext)
+    }
+
+    /**
+     * 把「这个人是谁」相关的东西全删掉：地址、学号、密码、会话、课表、同步状态。
+     *
+     * 卸载当然更彻底，但很多人的做法是先把 App 丢着不用 ——
+     * 存了别人教务密码的东西，得给一条不卸载也能删干净的路。
+     */
+    fun wipeAccount() {
+        prefs.edit()
+            .remove(KEY_BASE)
+            .remove(KEY_USER)
+            .remove(KEY_PASS)
+            .remove(KEY_SESSION)
+            .remove(KEY_TERM)
+            .remove(KEY_TABLE)
+            .remove(KEY_SYNCED)
+            .remove(KEY_SYNC_OK)
+            .remove(KEY_ATTEMPT)
+            .remove(KEY_FAILS)
+            .apply()
+        _timetable.value = null
+        _syncOk.value = null
         CourseWidgetProvider.refreshAll(appContext)
     }
 
@@ -152,9 +218,11 @@ class TimetableStore private constructor(context: Context) {
     private fun readTimetable(): Timetable? {
         val raw = readField(KEY_TABLE) { it.trimStart().startsWith("{") }
         if (raw.isBlank()) return null
-        val t = runCatching { fromJson(JSONObject(raw)) }.getOrNull() ?: return null
-        if (t.courses.isEmpty()) {
-            // 旧格式（没存 zcd）解析不出课程 —— 那份 weeks 是旧解析器算的，不要了，让用户重新导入
+        val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+        val t = runCatching { fromJson(root) }.getOrNull() ?: return null
+        // v2 起「空课表」是合法状态（那个学期还没排课）；v1 的空表才是旧解析器的残渣
+        val ver = root.optInt("v", 1)
+        if (ver < 2 && t.courses.isEmpty()) {
             prefs.edit().remove(KEY_TABLE).apply()
             return null
         }
@@ -183,6 +251,7 @@ class TimetableStore private constructor(context: Context) {
             )
         }
         return JSONObject().apply {
+            put("v", 2)
             put("year", t.year)
             put("term", t.term)
             put("student", t.studentName)
@@ -249,5 +318,7 @@ class TimetableStore private constructor(context: Context) {
         private const val KEY_SYNCED = "last_sync"
         private const val KEY_SYNC_OK = "sync_ok"
         private const val KEY_SESSION = "jw_session"
+        private const val KEY_ATTEMPT = "sync_attempt_at"
+        private const val KEY_FAILS = "sync_fails"
     }
 }

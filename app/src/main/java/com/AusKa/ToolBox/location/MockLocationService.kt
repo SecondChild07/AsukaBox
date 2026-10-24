@@ -65,7 +65,15 @@ class MockLocationService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        // intent == null 是 START_STICKY 被系统重启时的常态。
+        // 之前这里什么都不做：既不 startForeground 也不 startLoop，Android 8+ 几秒内会再杀一次，
+        // 于是「重启—杀死」循环，而 isRunning 还是 true、界面照样说正在模拟。
+        if (intent == null) {
+            startForegroundSafely("")
+            if (!mocking) startLoop()
+            return START_STICKY
+        }
+        when (intent.action) {
             ACTION_START -> {
                 currentLat = intent.getDoubleExtra(EXTRA_LAT, 0.0)
                 currentLon = intent.getDoubleExtra(EXTRA_LON, 0.0)
@@ -81,6 +89,11 @@ class MockLocationService : Service() {
             ACTION_UPDATE -> {
                 currentLat = intent.getDoubleExtra(EXTRA_LAT, currentLat)
                 currentLon = intent.getDoubleExtra(EXTRA_LON, currentLon)
+                // 服务没在跑（被回收过）时改坐标是空操作，退化成一整套启动
+                if (!mocking) {
+                    startForegroundSafely("")
+                    startLoop()
+                }
             }
 
             ACTION_STOP -> {
@@ -107,9 +120,11 @@ class MockLocationService : Service() {
         super.onDestroy()
     }
 
-    /** 只把推送线程停下，不动 provider 状态 */
+    /** 只把推送线程停下，不动 provider 状态（但 isRunning 得跟着撒谎的代价太大，要重置） */
     private fun stopLoopWorkerOnly() {
         mocking = false
+        // 被动销毁时 UI 还靠这个静态变量判断「正在模拟」，不重置就会一直显示运行中
+        isRunning = false
         worker?.interrupt()
         worker = null
     }

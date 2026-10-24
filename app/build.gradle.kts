@@ -50,7 +50,7 @@ android {
         applicationId = "com.AusKa.ToolBox"
         minSdk = 24
         targetSdk = 37
-        versionCode = 107
+        versionCode = 108
         versionName = "1.0"
 
         // 空字符串 = 未配置签名，运行时跳过签名校验
@@ -78,8 +78,8 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
-            // debug 与 release 用同一个签名，否则 Guard 会把自己拦下来
-            signingConfig = signingConfigs.getByName(if (hasReleaseKey) "release" else "debug")
+            // debug 用自己的 debug 签名（Guard 对 debug 构建跳过签名校验）
+            signingConfig = signingConfigs.getByName("debug")
             optimization {
                 enable = true
                 packageScope = setOf(

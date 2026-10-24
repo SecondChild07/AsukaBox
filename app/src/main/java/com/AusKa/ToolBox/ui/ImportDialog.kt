@@ -105,6 +105,14 @@ fun ImportDialog(
             error = "教务地址、学号、密码都要填"
             return
         }
+        // 地址变了就作废上一次的会话，否则改对域名再点，打的还是旧地址
+        if (session != null && base != store.baseUrl) {
+            session = null
+            page = null
+            needCaptcha = false
+            captchaImg = null
+            captchaText = ""
+        }
         loading = true
         error = null
         scope.launch {
@@ -118,7 +126,10 @@ fun ImportDialog(
                     }
 
                     if (needCaptcha && captcha.isNullOrBlank()) {
-                        withContext(Dispatchers.Main) { loading = false }
+                        withContext(Dispatchers.Main) {
+                            loading = false
+                            error = "先填一下验证码"
+                        }
                         return@withContext
                     }
 
@@ -132,8 +143,11 @@ fun ImportDialog(
                         store.username = user
                         store.password = pass
                         store.termKey = "$year-$term"
-                        store.save(tt)
+                        // 会话存下来给静默同步复用
+                        s.sessionCookie?.let { store.sessionCookie = it }
+                        store.markSync(true)
                         loading = false
+                        // 落盘和 startDate 兜底统一交给 onImported，这里不再重复 save
                         onImported(tt)
                     }
                 }
@@ -188,7 +202,7 @@ fun ImportDialog(
                         keyboardType = KeyboardType.Uri,
                     )
                     // 明文的教务入口很多（正方大量部署在 http 上），不拦但要说清楚代价
-                    if (base.startsWith("http://", ignoreCase = true)) {
+                    if (!base.startsWith("https://", ignoreCase = true) && base.isNotBlank()) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             text = "这条地址是 http，同一校园网内可被嗅探。密码虽然先过 RSA，" +

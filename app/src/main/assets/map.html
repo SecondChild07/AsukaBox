@@ -686,15 +686,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
 </style>
 </head>
 <body>
-  <div id="dbg" style="display:none" style="position:fixed;left:0;top:0;right:0;z-index:9999;background:rgba(0,0,0,.75);color:#0f0;font:11px monospace;padding:3px 6px;white-space:pre-wrap;"></div>
 <div id="map"></div>
 <div class="hint" id="hint">点地图任意位置选点</div>
 <script>
   var LAT0 = 39.908823, LON0 = 116.397470;
-  var dbg = document.getElementById('dbg');
-  var tileErr = 0, tileOk = 0;
-  function say(m) { if (dbg) dbg.textContent = m; }
-  say('L=' + (typeof L) + ' dpr=' + window.devicePixelRatio);
 
   var map = L.map('map', { zoomControl: false, attributionControl: true, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false }).setView([LAT0, LON0], 15);
 
@@ -703,9 +698,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     maxZoom: 18,
     minZoom: 3,
     attribution: '© 高德地图'
-  });
-  layer.on('tileload', function () { tileOk++; say('ok=' + tileOk + ' err=' + tileErr); });
-  layer.on('tileerror', function (e) { tileErr++; say('ok=' + tileOk + ' err=' + tileErr + ' ' + (e && e.tile && e.tile.src ? e.tile.src.slice(0, 60) : '')); });
+  }); }); });
   layer.addTo(map);
 
   var marker = null;
@@ -736,7 +729,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
   // Compose 里 WebView 的尺寸可能比 Leaflet 初始化晚，量到 0x0 就什么都不画
   function fixSize() {
     map.invalidateSize();
-    say('size=' + map.getSize().x + 'x' + map.getSize().y + ' ok=' + tileOk + ' err=' + tileErr);
   }
   window.addEventListener('load', function () { setTimeout(fixSize, 150); setTimeout(fixSize, 600); });
   if (window.ResizeObserver) { new ResizeObserver(fixSize).observe(document.getElementById('map')); }

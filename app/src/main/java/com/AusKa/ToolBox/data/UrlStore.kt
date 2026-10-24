@@ -34,7 +34,7 @@ class UrlStore(context: Context) {
         }
 
     var autoCheckin: Boolean
-        get() = prefs.getBoolean(KEY_AUTO, true)
+        get() = prefs.getBoolean(KEY_AUTO, false)
         set(value) = prefs.edit().putBoolean(KEY_AUTO, value).apply()
 
     fun clear() = prefs.edit().remove(KEY_URL).apply()

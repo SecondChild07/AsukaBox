@@ -131,13 +131,12 @@ fun TimetableScreen(
             store = store,
             onDismiss = { showImport = false },
             onImported = { tt ->
-                // 正方不给开学日期，先按学期估一个；之后用户可以在课表页校准
-                val fixed = if (tt.startDate.isBlank()) {
-                    tt.copy(startDate = TermCalendar.format(TermCalendar.estimateStart(tt.year, tt.term)))
-                } else {
-                    tt
-                }
-                store.save(fixed)
+                    // 落盘只在这一个地方。开学日期优先沿用已有的 ——
+                    // 服务端 startDate 永远为空，无条件重估会把用户校准过的第 N 周冲掉
+                    val keepDate = store.load()?.startDate?.takeIf { it.isNotBlank() }
+                        ?: TermCalendar.format(TermCalendar.estimateStart(tt.year, tt.term))
+                    val fixed = tt.copy(startDate = keepDate)
+                    store.save(fixed)
                 store.markSync(true)
                 week = weekOf(fixed)
                 showImport = false
@@ -343,7 +342,8 @@ private fun GlassPillButton(text: String, onClick: () -> Unit) {
 }
 
 private val DAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
-private const val MAX_SECTION = 12
+/** 兜底 12 节；学校排到 13、14 节时按数据往上顶（见 TimetableGrid 的 maxSection） */
+private const val MIN_SECTION_ROWS = 12
 private val CELL_HEIGHT: Dp = 56.dp
 private val SECTION_COL_WIDTH: Dp = 22.dp
 
@@ -356,6 +356,8 @@ private fun TimetableGrid(
 ) {
     val palette = LocalGlassPalette.current
     val courses = timetable.grid(week)
+    // 有的学校一天排到 13、14 节，写死 12 会把最后几节画到容器外面裁掉
+    val maxSection = maxOf(MIN_SECTION_ROWS, courses.maxOfOrNull { it.endSection } ?: MIN_SECTION_ROWS)
     val weekStart = TermCalendar.weekStart(timetable.startDate, week) {
         TermCalendar.estimateStart(timetable.year, timetable.term)
     }
@@ -397,12 +399,12 @@ private fun TimetableGrid(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(CELL_HEIGHT * MAX_SECTION),
+                .height(CELL_HEIGHT * maxSection),
         ) {
             // 节次列 + 背景网格
             Row(Modifier.fillMaxSize()) {
                 Column(Modifier.width(SECTION_COL_WIDTH)) {
-                    for (s in 1..MAX_SECTION) {
+                    for (s in 1..maxSection) {
                         Box(
                             Modifier
                                 .height(CELL_HEIGHT)

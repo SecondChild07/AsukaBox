@@ -51,6 +51,22 @@ jobs:
           chmod +x gradlew
           ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
 
+      - name: Lint
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:lintRelease --no-daemon || true
+
+      # 非 tag 分支也构建一次 release —— R8 + shrinkResources + proguard 这条链路
+      # 如果只在发版那一刻才第一次被执行，崩了要么发不出去、要么发出去才发现。
+      # 没配 keystore 时 release 会退回 debug 签名（见 build.gradle.kts）。
+      - name: Build release variant (R8 check)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          RELEASE_STORE_FILE: ${{ github.workspace }}/release.jks
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
       - name: Build APK
         env:
           RELEASE_STORE_FILE: ${{ github.workspace }}/release.jks
@@ -86,5 +102,5 @@ jobs:
         with:
           files: out/*.apk
           generate_release_notes: true
-          draft: false
+          draft: true
           prerelease: false

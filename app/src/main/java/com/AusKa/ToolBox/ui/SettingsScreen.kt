@@ -13,13 +13,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.AusKa.ToolBox.BuildConfig
 import com.AusKa.ToolBox.data.Author
+import com.AusKa.ToolBox.data.TimetableStore
+import com.AusKa.ToolBox.data.UrlStore
 import com.AusKa.ToolBox.glass.LiquidGlass
 import com.AusKa.ToolBox.glass.LocalGlassPalette
 
@@ -33,6 +41,12 @@ import com.AusKa.ToolBox.glass.LocalGlassPalette
 fun SettingsScreen(modifier: Modifier = Modifier) {
     val palette = LocalGlassPalette.current
     val context = LocalContext.current
+    val app = context.applicationContext
+    val urlStore = remember { UrlStore(app) }
+    val ttStore = remember { TimetableStore.get(app) }
+    var autoCheckin by remember { mutableStateOf(urlStore.autoCheckin) }
+    var confirmWipe by remember { mutableStateOf(false) }
+    val hasAccount = ttStore.hasAccount
 
     Column(
         modifier = modifier
@@ -76,6 +90,32 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     trailingArrow = true,
                 )
                 GlassDivider()
+                // 31：贴卡自动拉起支付宝是个不可撤销的外发动作，得能关
+                GlassRow(
+                    title = "贴卡自动签到",
+                    subtitle = if (autoCheckin) "读到链接就自动拉起支付宝" else "只显示链接，点了才拉起",
+                    value = if (autoCheckin) "开" else "关",
+                    onClick = {
+                        autoCheckin = !autoCheckin
+                        urlStore.autoCheckin = autoCheckin
+                    },
+                )
+                GlassDivider()
+                GlassRow(
+                    title = "清除签到链接",
+                    subtitle = "把存在本机的支付宝签到链接删掉",
+                    onClick = { urlStore.clear() },
+                )
+                if (hasAccount) {
+                    GlassDivider()
+                    // 37：存了别人的教务密码，就得给一条能删干净的路
+                    GlassRow(
+                        title = "清除教务账号",
+                        subtitle = "账号、密码、会话、课表一起删掉",
+                        onClick = { confirmWipe = true },
+                    )
+                }
+                GlassDivider()
                 GlassRow(
                     title = "作者主页",
                     subtitle = Author.URL.removePrefix("https://"),
@@ -97,6 +137,24 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         )
 
         Spacer(Modifier.height(26.dp))
+    }
+
+    if (confirmWipe) {
+        AlertDialog(
+            onDismissRequest = { confirmWipe = false },
+            title = { Text("清除教务账号？") },
+            text = { Text("学号、密码、登录会话和已导入的课表都会从这台手机删掉，桌面卡片也会变空。这个操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    ttStore.wipeAccount()
+                    urlStore.autoCheckin = false
+                    confirmWipe = false
+                }) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmWipe = false }) { Text("取消") }
+            },
+        )
     }
 }
 

@@ -43,9 +43,12 @@ class JwglxtSession(rawBase: String, initialCookie: String? = null) {
 
     val base: String = normalizeBase(rawBase)
     private val jar = CookieJar().apply {
-        // 上次登录留下的 JSESSIONID：能直接复用就省一次登录（正方有异地互踢和频率限制）
-        initialCookie?.substringBefore(';')?.split('=')?.let { kv ->
-            if (kv.size >= 2) put(kv[0].trim(), kv.drop(1).joinToString("=").trim())
+        // 上次登录留下的整串 cookie。正方常同时下发 JSESSIONID 和 route（负载均衡粘性），
+        // 只恢复第一个的话，若第一个恰好是 route，JSESSIONID 就丢了、复用 100% 失效。
+        initialCookie?.split(';')?.forEach { part ->
+            val kv = part.trim()
+            val eq = kv.indexOf('=')
+            if (eq > 0) put(kv.substring(0, eq).trim(), kv.substring(eq + 1).trim())
         }
     }
 
@@ -92,9 +95,11 @@ class JwglxtSession(rawBase: String, initialCookie: String? = null) {
         // 判断要不要验证码只看登录页有没有那个输入框。
         // 有的学校 /kaptcha 接口照样能出图，但页面根本没有填验证码的地方
         // —— 这时候硬塞一个 yzm 上去，服务端会当成错误请求直接拒掉。
-        val needCaptcha = Regex("""name=["']yzm["']""").containsMatchIn(html) ||
-            Regex("""id=["']yzm["']""").containsMatchIn(html) ||
-            html.contains("kaptcha", ignoreCase = true)
+        // 只认「页面上真的有验证码输入框」。很多模板即使不需要验证码，
+        // 也会在 script 里出现 kaptcha 字样（那只是接口路径），按字符串匹配会误判，
+        // 结果静默同步永远返回 NeedCaptcha、一次也登不上。
+        val needCaptcha = Regex("""<input[^>]*name=["']yzm["']""", RegexOption.IGNORE_CASE).containsMatchIn(html) ||
+            Regex("""<input[^>]*id=["']yzm["']""", RegexOption.IGNORE_CASE).containsMatchIn(html)
 
         val captchaUrl = "$base$hit/kaptcha?time=${System.currentTimeMillis()}"
 

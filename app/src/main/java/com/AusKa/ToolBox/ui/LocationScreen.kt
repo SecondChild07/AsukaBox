@@ -355,13 +355,23 @@ fun LocationScreen(
 private fun fmt(value: Double): String = "%.6f".format(value)
 
 /** 从一段文字里抠出「纬度, 经度」 */
+/**
+ * 从一段文字里抠出经纬度。
+ *
+ * **只认带小数点的数**。之前按「前两个数字」取，粘一段地址就出事：
+ * 微信里复制「朝阳区建国路 88 号 3 栋」→ 解析成 (88.0, 3.0)，纬度 88 还在合法区间内，
+ * 会被写进 store 直接灌进 provider，用户以为定位坏了。
+ * 坐标几乎总是带小数（39.9088），门牌号/楼号几乎总是不带 —— 这是最省事也最稳的分界。
+ */
 private fun parseCoordinate(raw: String): Pair<Double, Double>? {
-    val nums = Regex("""-?\d+(?:\.\d+)?""").findAll(raw)
+    val nums = Regex("""-?\d+\.\d+""").findAll(raw)
         .mapNotNull { it.value.toDoubleOrNull() }
         .toList()
     if (nums.size < 2) return null
     val lat = nums[0]
     val lon = nums[1]
     if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
+    // 0,0 基本是「没填」或者解析错，别当成几内亚湾
+    if (lat == 0.0 && lon == 0.0) return null
     return lat to lon
 }

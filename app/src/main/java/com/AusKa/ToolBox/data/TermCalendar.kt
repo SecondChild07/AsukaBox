@@ -89,4 +89,21 @@ object TermCalendar {
         val dow = date.get(Calendar.DAY_OF_WEEK)
         return if (dow == Calendar.SUNDAY) 7 else dow - 1
     }
+
+    /**
+     * 现在大概是哪个学年学期。8 月开学 → 当年第一学期，其它 → 次年第二学期之前的那个。
+     * 和导入弹窗的默认值保持一致（以前这段逻辑散在 UI 里，同步拿不到）。
+     */
+    fun defaultTerm(now: Calendar = Calendar.getInstance()): Pair<Int, Int> {
+        val m = now.get(Calendar.MONTH) + 1
+        val y = now.get(Calendar.YEAR)
+        return if (m >= 8) y to 3 else (y - 1) to 12
+    }
+
+    /** 这份课表的学期是不是已经走完了（按 maxWeek 周算）。走完了就该换新学期。 */
+    fun isTermOver(t: Timetable, now: Calendar = Calendar.getInstance()): Boolean {
+        val start = parse(t.startDate) ?: estimateStart(t.year, t.term)
+        val end = (start.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, t.maxWeek * 7) }
+        return now.after(end)
+    }
 }
