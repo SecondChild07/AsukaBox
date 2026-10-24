@@ -35,6 +35,13 @@ class MockLocationService : Service() {
 
     private var worker: Thread? = null
 
+    /** 当前要灌的坐标，摇杆推动时由 [update] 直接改，不用重启服务 */
+    @Volatile
+    private var currentLat = 0.0
+
+    @Volatile
+    private var currentLon = 0.0
+
     @Volatile
     private var mocking = false
 
@@ -43,11 +50,16 @@ class MockLocationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                val lat = intent.getDoubleExtra(EXTRA_LAT, 0.0)
-                val lon = intent.getDoubleExtra(EXTRA_LON, 0.0)
+                currentLat = intent.getDoubleExtra(EXTRA_LAT, 0.0)
+                currentLon = intent.getDoubleExtra(EXTRA_LON, 0.0)
                 val label = intent.getStringExtra(EXTRA_LABEL).orEmpty()
                 startForegroundSafely(label)
-                startLoop(lat, lon)
+                startLoop()
+            }
+
+            ACTION_UPDATE -> {
+                currentLat = intent.getDoubleExtra(EXTRA_LAT, currentLat)
+                currentLon = intent.getDoubleExtra(EXTRA_LON, currentLon)
             }
 
             ACTION_STOP -> {
@@ -109,7 +121,7 @@ class MockLocationService : Service() {
         }
     }
 
-    private fun startLoop(lat: Double, lon: Double) {
+    private fun startLoop() {
         stopLoop()
         val manager = getSystemService(LocationManager::class.java) ?: return
         mocking = true
@@ -118,7 +130,7 @@ class MockLocationService : Service() {
         worker = Thread({
             ensureProviders(manager)
             while (mocking) {
-                push(manager, lat, lon)
+                push(manager, currentLat, currentLon)
                 try {
                     Thread.sleep(INTERVAL_MS)
                 } catch (_: InterruptedException) {
@@ -191,6 +203,7 @@ class MockLocationService : Service() {
     companion object {
         const val ACTION_START = "com.tencent.ToolBox.action.MOCK_START"
         const val ACTION_STOP = "com.tencent.ToolBox.action.MOCK_STOP"
+        const val ACTION_UPDATE = "com.tencent.ToolBox.action.MOCK_UPDATE"
         const val EXTRA_LAT = "lat"
         const val EXTRA_LON = "lon"
         const val EXTRA_LABEL = "label"
@@ -244,6 +257,16 @@ class MockLocationService : Service() {
                 putExtra(EXTRA_LABEL, label)
             }
             context.startForegroundService(intent)
+        }
+
+        /** 只换坐标，不动服务（摇杆每动一下就调一次） */
+        fun update(context: Context, lat: Double, lon: Double) {
+            val intent = Intent(context, MockLocationService::class.java).apply {
+                action = ACTION_UPDATE
+                putExtra(EXTRA_LAT, lat)
+                putExtra(EXTRA_LON, lon)
+            }
+            runCatching { context.startService(intent) }
         }
 
         fun stop(context: Context) {

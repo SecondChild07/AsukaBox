@@ -228,6 +228,20 @@ keytool -genkeypair -keystore app/release.jks -alias mykey \
 
 坐标怎么给：手填、从剪贴板粘（会自己从一段文字里抠出「纬度, 经度」）、或者点常用地点（天安门 / 上海外滩 / 广州塔）。
 
+要"走过去"就用摇杆：按住圆点往某个方向推，坐标会按选定速度连续移动（步行 1.4 / 骑行 4.2 / 开车 13.9 m/s），松手停住。换算用的是球面近似 —— 纬度按 111320 米/度，经度再乘 `cos(纬度)`，短距离内误差可以忽略。
+
+摇杆这块有个 Compose 的坑值得记一笔：它放在 `verticalScroll` 的 Column 里，用 `detectDragGestures` 时垂直方向的拖动会先被外层滚动吃掉，表现是"能拖但坐标不动"。解法是在 **`PointerEventPass.Initial`** 阶段就把事件 consume 掉，抢在滚动之前：
+
+```kotlin
+awaitEachGesture {
+    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+    down.consume()
+    ...
+}
+```
+
+另一个坑是 `LaunchedEffect` 的 key：别把拖动的方向 `dirX/dirY` 写进 key —— 拖动时它们每帧都变，协程会被反复取消重启，`delay(200)` 永远跑不完，同样表现为"坐标不动"。key 只留 `running`，方向用 `rememberUpdatedState` 在循环里读最新的。
+
 几个必须说清楚的限制：
 
 - **停就没了**。坐标得持续灌，服务一停系统立刻回到真实定位。所以这里用的是前台服务 + 一条常驻通知
