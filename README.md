@@ -226,21 +226,22 @@ keytool -genkeypair -keystore app/release.jks -alias mykey \
 
 所以它只改「模拟位置」这一层，不碰系统文件、不装模块。用 `adb shell dumpsys location` 能看到 `gps provider [mock]`。
 
-坐标怎么给：手填、从剪贴板粘（会自己从一段文字里抠出「纬度, 经度」）、或者点常用地点（天安门 / 上海外滩 / 广州塔）。
+坐标怎么给：点「在地图上选点」拖地图点一下（高德底图），或者手填/从剪贴板粘（会自己从一段文字里抠出「纬度, 经度」）。
 
-要"走过去"就用摇杆：按住圆点往某个方向推，坐标会按选定速度连续移动（步行 1.4 / 骑行 4.2 / 开车 13.9 m/s），松手停住。换算用的是球面近似 —— 纬度按 111320 米/度，经度再乘 `cos(纬度)`，短距离内误差可以忽略。
-
-摇杆这块有个 Compose 的坑值得记一笔：它放在 `verticalScroll` 的 Column 里，用 `detectDragGestures` 时垂直方向的拖动会先被外层滚动吃掉，表现是"能拖但坐标不动"。解法是在 **`PointerEventPass.Initial`** 阶段就把事件 consume 掉，抢在滚动之前：
+地图这块有一个必须处理的坐标系问题：**高德瓦片是 GCJ-02，系统 GPS provider 要 WGS-84**，两者在北京差约 600 米。所以页面上同时显示两个坐标 —— 上面是你在地图上点的（GCJ-02），下面是真正写进系统的（转成 WGS-84 之后的）：
 
 ```kotlin
-awaitEachGesture {
-    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-    down.consume()
-    ...
+object CoordinateConverter {
+    fun wgs84ToGcj02(lat: Double, lon: Double): Pair<Double, Double>
+    fun gcj02ToWgs84(lat: Double, lon: Double): Pair<Double, Double>
 }
 ```
 
-另一个坑是 `LaunchedEffect` 的 key：别把拖动的方向 `dirX/dirY` 写进 key —— 拖动时它们每帧都变，协程会被反复取消重启，`delay(200)` 永远跑不完，同样表现为"坐标不动"。key 只留 `running`，方向用 `rememberUpdatedState` 在循环里读最新的。
+反解没有闭式解，用的是迭代两次逼近，误差在 1 米内，够用。
+
+地图是 Leaflet + 高德瓦片，塞在 `assets/` 里用 WebView 加载，不联网引 JS。这里踩了个很隐蔽的坑：`#map` 用 `height: 100%` 时，WebView 里量到的高度是 **0**（`map.getSize()` 返回 `376x0`），Leaflet 于是什么都不画，但 `tileload` 事件照样触发（`ok=20 err=0`），从日志看完全像是"加载成功但显示不出来"。改成 `position: fixed; top/right/bottom/left: 0` 就好了 —— fixed 定位不依赖祖先高度链。
+
+另外改 `assets/` 里的文件后，`mergeAssets` 会报 UP-TO-DATE 把旧文件打进包里；要么删 `app/build/intermediates/assets`，要么 clean 一次。
 
 几个必须说清楚的限制：
 
