@@ -53,6 +53,16 @@
 - 网格按周切换，单双周、跳周（`1-8,10-16周`）、连上多节都能正确显示
 - 课程颜色按课名 hash 分配，同一门课前后一致
 
+### 3. 虚拟定位
+
+走系统的 test provider（`addTestProvider` + `setTestProviderLocation`）：在开发者选项里把明日箱选成「模拟位置信息应用」之后，就能在地图上点一个点，把定位钉在那儿。
+
+每 100 毫秒推一次，provider 属性和 Location 字段都按真实 GPS 的规格配（高功耗 + 精确定位 + `satellites=7`），这样定位 SDK 才不会把它当成不可信的源丢掉。
+
+不用 root，不装 Xposed。代价是：打车、考勤这类会查 `isFromMockProvider()` 的 App 仍然可能识破。
+
+<img src="docs/screenshot-location.png" width="270" alt="虚拟定位">
+
 ## 界面结构
 
 - **功能页**：竖向列表，一行一个功能 —— 左侧彩色图标，右侧名称 + 一句说明，末尾箭头
