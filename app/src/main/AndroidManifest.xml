@@ -9,6 +9,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 模拟位置本身不读定位，但 location 类型的前台服务在 Android 10~13 上要求
+         持有定位权限才允许 startForeground；部分 ROM 的 addTestProvider 也要它 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- 「开发者选项 → 选择模拟位置信息应用」的列表靠 hasRequestedAppOpPermission 过滤，
          必须在 manifest 里声明这条 signature 权限才排得进去（拿不到它，只是声明） -->
     <uses-permission

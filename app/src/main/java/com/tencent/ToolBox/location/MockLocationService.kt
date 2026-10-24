@@ -53,6 +53,8 @@ class MockLocationService : Service() {
                 currentLat = intent.getDoubleExtra(EXTRA_LAT, 0.0)
                 currentLon = intent.getDoubleExtra(EXTRA_LON, 0.0)
                 val label = intent.getStringExtra(EXTRA_LABEL).orEmpty()
+                lastError = ""
+                pushedCount = 0L
                 startForegroundSafely(label)
                 startLoop()
             }
@@ -167,8 +169,9 @@ class MockLocationService : Service() {
                     Criteria.POWER_LOW,
                     Criteria.ACCURACY_FINE,
                 )
-            }
+            }.onFailure { if (lastError.isEmpty()) lastError = "addTestProvider($name)：${it.javaClass.simpleName} ${it.message}" }
             runCatching { manager.setTestProviderEnabled(name, true) }
+                .onFailure { if (lastError.isEmpty()) lastError = "setTestProviderEnabled($name)：${it.javaClass.simpleName} ${it.message}" }
         }
     }
 
@@ -197,7 +200,9 @@ class MockLocationService : Service() {
                 }
             }
             runCatching { manager.setTestProviderLocation(name, location) }
+                .onFailure { if (lastError.isEmpty()) lastError = "setTestProviderLocation($name)：${it.javaClass.simpleName} ${it.message}" }
         }
+        pushedCount++
     }
 
     companion object {
@@ -220,6 +225,16 @@ class MockLocationService : Service() {
         /** 服务是否正在跑，给界面用 */
         @Volatile
         var isRunning: Boolean = false
+            private set
+
+        /** 最近一次失败原因（空串表示没出错），界面上直接显示出来便于排查 */
+        @Volatile
+        var lastError: String = ""
+            private set
+
+        /** 已经成功灌了多少次坐标，界面用它判断「真的在推」 */
+        @Volatile
+        var pushedCount: Long = 0L
             private set
 
         /**

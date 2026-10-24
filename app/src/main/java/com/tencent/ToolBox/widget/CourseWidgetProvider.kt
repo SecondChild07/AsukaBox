@@ -81,24 +81,9 @@ class CourseWidgetProvider : AppWidgetProvider() {
                 TermCalendar.estimateStart(timetable.year, timetable.term)
             }
             val dow = TermCalendar.dayOfWeekIndex(today)
-            val todayCourses = timetable.ofWeek(week)
+            val list = timetable.ofWeek(week)
                 .filter { it.day == dow }
                 .sortedBy { it.startSection }
-
-            // 今天没课就翻到最近有课的那一天显示，别让卡片空着 —— 不然周末永远是「今天没课」
-            val fallback = if (todayCourses.isEmpty()) upcomingDay(timetable, week, dow) else null
-            val list = fallback?.second ?: todayCourses
-            val label = when {
-                fallback == null -> "今天"
-                fallback.first - dow == 1 || fallback.first - dow == -6 -> "明天"
-                else -> "周${DAY_NAMES[fallback.first - 1]}"
-            }
-            val shownDate = if (fallback == null) {
-                TermCalendar.monthDay(today)
-            } else {
-                val cal = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, fallback.first - dow) }
-                TermCalendar.monthDay(cal)
-            }
 
             // 按 launcher 实际给的格子高度决定放几行，用户把卡片拉大就能多看几门
             val maxHeightDp = manager.getAppWidgetOptions(id)
@@ -107,7 +92,7 @@ class CourseWidgetProvider : AppWidgetProvider() {
 
             views.setTextViewText(
                 R.id.widget_header,
-                "第 $week 周 · $shownDate 周${DAY_NAMES[(if (fallback == null) dow else fallback.first) - 1]}",
+                "第 $week 周 · ${TermCalendar.monthDay(today)} 周${DAY_NAMES[dow - 1]}",
             )
             views.removeAllViews(R.id.widget_content)
 
@@ -116,11 +101,11 @@ class CourseWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(R.id.widget_footer, View.GONE)
                 views.addView(
                     R.id.widget_content,
-                    hintText(context, "这周没课", "打开 App 检查一下课表或重新导入"),
+                    hintText(context, "今日无课", "第 $week 周 · 周${DAY_NAMES[dow - 1]}"),
                 )
             } else {
                 views.setViewVisibility(R.id.widget_title, View.VISIBLE)
-                views.setTextViewText(R.id.widget_title, "$label ${list.size} 门")
+                views.setTextViewText(R.id.widget_title, "今天 ${list.size} 门")
                 list.take(maxRows).forEach { course ->
                     views.addView(R.id.widget_content, buildRow(context, course))
                 }
@@ -157,18 +142,6 @@ class CourseWidgetProvider : AppWidgetProvider() {
                 box.setViewVisibility(R.id.hint_detail, View.VISIBLE)
             }
             return box
-        }
-
-        /** 从明天往后数 7 天，找最近的一门 —— 用来填「今天没课」时的脚注，返回 (课, 日期说法) */
-        /** 今天没课时，往前找最近一个有课的那天，返回 (星期几, 那天的课) */
-        private fun upcomingDay(timetable: Timetable, week: Int, todayDow: Int): Pair<Int, List<Course>>? {
-            val courses = timetable.ofWeek(week)
-            for (offset in 1..7) {
-                val day = ((todayDow - 1 + offset) % 7) + 1
-                val list = courses.filter { it.day == day }.sortedBy { it.startSection }
-                if (list.isNotEmpty()) return day to list
-            }
-            return null
         }
 
         private fun openApp(context: Context): PendingIntent {

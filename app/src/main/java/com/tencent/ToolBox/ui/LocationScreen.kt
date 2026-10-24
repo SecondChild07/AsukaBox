@@ -46,6 +46,7 @@ import com.tencent.ToolBox.glass.GlassLabel
 import com.tencent.ToolBox.glass.GlassTextField
 import com.tencent.ToolBox.glass.LiquidGlass
 import com.tencent.ToolBox.glass.LocalGlassPalette
+import kotlinx.coroutines.delay
 import com.tencent.ToolBox.location.MockLocationService
 
 /**
@@ -69,6 +70,29 @@ fun LocationScreen(
     var running by remember { mutableStateOf(MockLocationService.isRunning) }
     var allowed by remember { mutableStateOf(MockLocationService.canMock(context)) }
     var showMap by remember { mutableStateOf(false) }
+    var pushed by remember { mutableStateOf(MockLocationService.pushedCount) }
+    var locationGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    // 推了几次、有没有报错，每 800ms 刷一次给界面看
+    LaunchedEffect(running) {
+        while (running) {
+            pushed = MockLocationService.pushedCount
+            delay(800)
+        }
+    }
+
+    val locationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        locationGranted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+    }
 
     // 从开发者选项切回来时重新判断一次授权状态
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -94,6 +118,14 @@ fun LocationScreen(
             != PackageManager.PERMISSION_GRANTED
         ) {
             notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (!locationGranted) {
+            locationPermission.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                )
+            )
         }
     }
 
@@ -181,6 +213,33 @@ fun LocationScreen(
                     fontSize = 11.5.sp,
                     lineHeight = 16.sp,
                 )
+                if (running) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (pushed > 0) "已推送 $pushed 次" else "还没推送出去",
+                        color = palette.textTertiary,
+                        fontSize = 11.sp,
+                    )
+                }
+                val err = MockLocationService.lastError
+                if (err.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = err,
+                        color = palette.danger,
+                        fontSize = 10.5.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
+                if (!locationGranted) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "定位权限没给：部分系统会因此拒绝模拟位置。点下面的按钮授权",
+                        color = palette.warn,
+                        fontSize = 10.5.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
             }
         }
 
