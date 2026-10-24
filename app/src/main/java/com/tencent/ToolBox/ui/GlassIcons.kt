@@ -111,61 +111,7 @@ fun DrawScope.nfcIcon(color: Color) {
     }
 }
 
-/** 外链：方框 + 斜箭头 */
-fun DrawScope.linkIcon(color: Color) {
-    val s = size.minDimension
-    val stroke = s * 0.092f
-    val boxSize = s * 0.46f
-    val topLeft = Offset(s * 0.10f, s * 0.40f)
-    drawRoundRect(
-        color = color,
-        topLeft = topLeft,
-        size = Size(boxSize, boxSize),
-        cornerRadius = CornerRadius(s * 0.10f),
-        style = Stroke(width = stroke),
-    )
-    drawLine(color, Offset(s * 0.46f, s * 0.54f), Offset(s * 0.80f, s * 0.20f), stroke, StrokeCap.Round)
-    drawLine(color, Offset(s * 0.56f, s * 0.18f), Offset(s * 0.82f, s * 0.18f), stroke, StrokeCap.Round)
-    drawLine(color, Offset(s * 0.82f, s * 0.18f), Offset(s * 0.82f, s * 0.44f), stroke, StrokeCap.Round)
-}
 
-/** 出箱 / 收件箱：一个小箱子轮廓，做首页标记用 */
-fun DrawScope.boxIcon(color: Color) {
-    val s = size.minDimension
-    val stroke = s * 0.075f
-    val w = s * 0.62f
-    val h = s * 0.46f
-    val left = (s - w) / 2f
-    val top = s * 0.30f
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(left, top),
-        size = Size(w, h),
-        cornerRadius = CornerRadius(s * 0.12f),
-        style = Stroke(width = stroke),
-    )
-    drawLine(
-        color = color,
-        start = Offset(left, top + h * 0.30f),
-        end = Offset(left + w, top + h * 0.30f),
-        strokeWidth = stroke,
-        cap = StrokeCap.Round,
-    )
-    drawLine(
-        color = color,
-        start = Offset(s * 0.42f, s * 0.30f),
-        end = Offset(s * 0.42f, s * 0.14f),
-        strokeWidth = stroke,
-        cap = StrokeCap.Round,
-    )
-    drawLine(
-        color = color,
-        start = Offset(s * 0.58f, s * 0.30f),
-        end = Offset(s * 0.58f, s * 0.14f),
-        strokeWidth = stroke,
-        cap = StrokeCap.Round,
-    )
-}
 
 /** 课表：日历轮廓 + 顶部挂环 + 中间「排课」横条 */
 fun DrawScope.calendarIcon(color: Color) {

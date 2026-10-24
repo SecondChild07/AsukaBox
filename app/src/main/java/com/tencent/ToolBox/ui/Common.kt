@@ -205,26 +205,3 @@ fun GlassDivider(modifier: Modifier = Modifier, inset: Dp = 16.dp) {
     )
 }
 
-/** 首页左下 / 右下的入口：圆钮 + 下方标签 */
-@Composable
-fun GlassEntry(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    val palette = LocalGlassPalette.current
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        GlassCircleButton(size = 66.dp, onClick = onClick) { content() }
-        Spacer(Modifier.height(9.dp))
-        Text(
-            text = label,
-            color = palette.textSecondary,
-            fontSize = 11.sp,
-        )
-    }
-}

@@ -31,7 +31,6 @@ import com.tencent.ToolBox.alipay.AlipayCheckin
 import com.tencent.ToolBox.data.UrlStore
 import com.tencent.ToolBox.glass.GlassButton
 import com.tencent.ToolBox.glass.GlassButtonKind
-import com.tencent.ToolBox.glass.GlassHeading
 import com.tencent.ToolBox.glass.GlassLabel
 import com.tencent.ToolBox.glass.LiquidGlass
 import com.tencent.ToolBox.glass.LocalGlassPalette
