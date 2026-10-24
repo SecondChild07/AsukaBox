@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.location.Criteria
 import android.location.Location
 import android.location.LocationManager
+import android.os.Bundle
 import android.os.Build
 import android.os.IBinder
 import android.os.Process
@@ -208,60 +209,63 @@ class MockLocationService : Service() {
         worker = null
     }
 
-    /** 把 gps / network 两个 provider 注册成 test provider（重复调用不会报错） */
+    /**
+     * 把 gps / network 注册成 test provider。
+     * 参数刻意对齐真实 provider 的属性（照 GoGoGo 的做法）——定位 SDK 会按
+     * power/accuracy 这些属性做筛选，参数对不上就会被当成「不可信的源」丢掉。
+     */
     private fun ensureProviders(manager: LocationManager) {
-        // 先把系统里存在、但我们还没纳入的 provider 全部拉进来 —— fused 就是这一步补上的
-        runCatching {
-            manager.allProviders
-                .filter { it != LocationManager.PASSIVE_PROVIDER && it !in PROVIDERS }
-                .forEach { PROVIDERS.add(it) }
-        }
-        PROVIDERS.forEach { name ->
+        SPECS.forEach { spec ->
             runCatching {
                 manager.addTestProvider(
-                    name,
-                    false,  // requiresNetwork
-                    true,   // requiresSatellite
-                    false,  // requiresCell
-                    false,  // hasMonetaryCost
-                    true,   // supportsAltitude
-                    true,   // supportsSpeed
-                    true,   // supportsBearing
-                    Criteria.POWER_LOW,
-                    Criteria.ACCURACY_FINE,
+                    spec.name,
+                    spec.requiresNetwork,
+                    spec.requiresSatellite,
+                    spec.requiresCell,
+                    spec.hasMonetaryCost,
+                    spec.supportsAltitude,
+                    spec.supportsSpeed,
+                    spec.supportsBearing,
+                    spec.power,
+                    spec.accuracy,
                 )
-            }.onFailure { if (lastError.isEmpty()) lastError = "addTestProvider($name)：${it.javaClass.simpleName} ${it.message}" }
-            runCatching { manager.setTestProviderEnabled(name, true) }
-                .onFailure { if (lastError.isEmpty()) lastError = "setTestProviderEnabled($name)：${it.javaClass.simpleName} ${it.message}" }
+            }.onFailure { if (lastError.isEmpty()) lastError = "addTestProvider(${spec.name})：${it.javaClass.simpleName} ${it.message}" }
+            runCatching { manager.setTestProviderEnabled(spec.name, true) }
+                .onFailure { if (lastError.isEmpty()) lastError = "setTestProviderEnabled(${spec.name})：${it.javaClass.simpleName} ${it.message}" }
         }
     }
 
     private fun releaseProviders(manager: LocationManager) {
-        PROVIDERS.forEach { name ->
-            runCatching { manager.setTestProviderEnabled(name, false) }
-            runCatching { manager.removeTestProvider(name) }
+        SPECS.forEach { spec ->
+            runCatching { manager.setTestProviderEnabled(spec.name, false) }
+            runCatching { manager.removeTestProvider(spec.name) }
         }
     }
 
     private fun push(manager: LocationManager, lat: Double, lon: Double) {
-        PROVIDERS.forEach { name ->
-            val location = Location(name).apply {
+        SPECS.forEach { spec ->
+            val location = Location(spec.name).apply {
                 latitude = lat
                 longitude = lon
-                accuracy = 3f
+                accuracy = spec.locationAccuracy
                 altitude = 42.0
+                bearing = 0f
+                speed = 1.2f
                 time = System.currentTimeMillis()
                 elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    bearing = 0f
-                    speed = 0f
                     verticalAccuracyMeters = 1f
                     speedAccuracyMetersPerSecond = 0.1f
                     bearingAccuracyDegrees = 1f
                 }
+                // 告诉上层「有卫星」——高德这类 SDK 会看卫星数判断 GNSS 是否可用，
+                // 数不到就降级去用网络定位，那等于白模拟
+                if (spec.satellites > 0) {
+                    extras = Bundle().apply { putInt("satellites", spec.satellites) }
+                }
             }
-            runCatching { manager.setTestProviderLocation(name, location) }
-                .onFailure { if (lastError.isEmpty()) lastError = "setTestProviderLocation($name)：${it.javaClass.simpleName} ${it.message}" }
+            runCatching { manager.setTestProviderLocation(spec.name, location) }
+                .onFailure { if (lastError.isEmpty()) lastError = "setTestProviderLocation(${spec.name})：${it.javaClass.simpleName} ${it.message}" }
         }
         pushedCount++
         lastPushAt = System.currentTimeMillis()
@@ -274,15 +278,15 @@ class MockLocationService : Service() {
     private fun verify(manager: LocationManager) {
         var bad = 0
         var sample = ""
-        PROVIDERS.forEach { name ->
+        SPECS.forEach { spec ->
             runCatching {
-                val last = manager.getLastKnownLocation(name) ?: return@runCatching
+                val last = manager.getLastKnownLocation(spec.name) ?: return@runCatching
                 val dLat = kotlin.math.abs(last.latitude - currentLat)
                 val dLon = kotlin.math.abs(last.longitude - currentLon)
                 if (dLat > 0.0005 || dLon > 0.0005) {
                     bad++
                     if (sample.isEmpty()) {
-                        sample = "$name ${"%.5f".format(last.latitude)},${"%.5f".format(last.longitude)}"
+                        sample = "${spec.name} ${"%.5f".format(last.latitude)},${"%.5f".format(last.longitude)}"
                     }
                 }
             }
@@ -303,15 +307,46 @@ class MockLocationService : Service() {
 
         private const val CHANNEL_ID = "mock_location"
         private const val NOTIFICATION_ID = 2001
-        private const val INTERVAL_MS = 1000L
 
         /**
-         * 默认只覆盖 gps / network 两个。运行时会再加上自检通过的额外 provider
-         * （有些 ROM 上还有 fused / passive，高德之类的 SDK 会优先读 fused）
+         * 100ms 一次 —— 和 GoGoGo（影梭）一样。
+         * 之前用 1000ms，真实的定位回调有整整一秒的窗口能挤进来，
+         * 表现就是「刚打开显示模拟位置、一两秒后跳回真实」。
          */
-        private val PROVIDERS = mutableListOf(
-            LocationManager.GPS_PROVIDER,
-            LocationManager.NETWORK_PROVIDER,
+        private const val INTERVAL_MS = 100L
+
+        /**
+         * provider 的属性必须和真实的一致，否则定位 SDK 会把它当不可信的源丢掉。
+         * gps：高功耗、精确定位、需要卫星；network：低功耗、粗略、需要基站
+         */
+        private data class ProviderSpec(
+            val name: String,
+            val requiresNetwork: Boolean,
+            val requiresSatellite: Boolean,
+            val requiresCell: Boolean,
+            val hasMonetaryCost: Boolean,
+            val supportsAltitude: Boolean,
+            val supportsSpeed: Boolean,
+            val supportsBearing: Boolean,
+            val power: Int,
+            val accuracy: Int,
+            val locationAccuracy: Float,
+            val satellites: Int,
+        )
+
+        private val SPECS = listOf(
+            ProviderSpec(
+                LocationManager.GPS_PROVIDER,
+                false, true, false, false, true, true, true,
+                Criteria.POWER_HIGH, Criteria.ACCURACY_FINE,
+                1f, 7,
+            ),
+            ProviderSpec(
+                LocationManager.NETWORK_PROVIDER,
+                true, false, true, true, true, true, true,
+                Criteria.POWER_LOW, Criteria.ACCURACY_COARSE,
+                30f, 0,
+            ),
         )
 
         /** 最近一次成功推送的时间戳，界面用它算「N 秒前」 */

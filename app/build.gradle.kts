@@ -50,8 +50,8 @@ android {
         applicationId = "com.tencent.ToolBox"
         minSdk = 24
         targetSdk = 37
-        versionCode = 27
-        versionName = "2.0.7"
+        versionCode = 28
+        versionName = "2.0.8"
 
         // 空字符串 = 未配置签名，运行时跳过签名校验
         buildConfigField("String", "CERT_SHA256", "\"$certSha256\"")
