@@ -1,6 +1,10 @@
 # 明日箱 · AsukaBox
 
 <p align="center">
+  <img src="docs/icon.png" width="112" alt="明日箱">
+</p>
+
+<p align="center">
   <img src="docs/screenshot.png" width="270" alt="浅色模式">
   <img src="docs/screenshot-dark.png" width="270" alt="深色模式">
   <img src="docs/screenshot-timetable.png" width="270" alt="课表">
