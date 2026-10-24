@@ -50,8 +50,8 @@ android {
         applicationId = "com.tencent.ToolBox"
         minSdk = 24
         targetSdk = 37
-        versionCode = 20
-        versionName = "2.0.0"
+        versionCode = 21
+        versionName = "2.0.1"
 
         // 空字符串 = 未配置签名，运行时跳过签名校验
         buildConfigField("String", "CERT_SHA256", "\"$certSha256\"")
@@ -114,6 +114,12 @@ android {
             excludes += "kotlin/**"
             excludes += "META-INF/androidx*"
         }
+    }
+
+    lint {
+        // 虚拟定位是这个 App 的核心功能之一，不是只在 debug 里用的测试钩子；
+        // 而且这条权限只是「声明」，好让系统把它列进「选择模拟位置信息应用」
+        disable += "MockLocation"
     }
 }
 

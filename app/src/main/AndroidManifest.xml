@@ -9,6 +9,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 「开发者选项 → 选择模拟位置信息应用」的列表靠 hasRequestedAppOpPermission 过滤，
+         必须在 manifest 里声明这条 signature 权限才排得进去（拿不到它，只是声明） -->
+    <uses-permission
+        android:name="android.permission.ACCESS_MOCK_LOCATION"
+        tools:ignore="ProtectedPermissions" />
 
     <uses-feature
         android:name="android.hardware.nfc"
