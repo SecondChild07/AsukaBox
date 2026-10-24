@@ -33,5 +33,5 @@
 -dontwarn androidx.**
 
 # 入口类保留（Manifest 引用，R8 本来也会 handle，这里显式声明防误删）
--keep class com.Auska.ToolBox.BoxApp { *; }
--keep class com.Auska.ToolBox.MainActivity { *; }
+-keep class com.AusKa.ToolBox.BoxApp { *; }
+-keep class com.AusKa.ToolBox.MainActivity { *; }

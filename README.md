@@ -111,7 +111,7 @@
 
 已知实测通过的部署：`/xtgl` 无前缀 + 1024 位公钥 + GBK 页面的那种。其他部署没条件挨个试，遇到不兼容的欢迎提 issue 带上错误提示原文（**请把学校域名和账号打码**）。
 
-> 只在点「导入」时联网，抓完就断开。地址和学号明文存，密码用一层可逆混淆存（挡不住 root，但 `adb shell cat shared_prefs/*.xml` 看到的不是一眼可读的密码）。
+> 只在点「导入」时联网，抓完就断开。地址、学号、密码、课表、签到链接全部用设备绑定的 AES-256-GCM（`ks1:` 前缀）加密后落盘，`adb shell cat shared_prefs/*.xml` 看到的是一串密文。密钥在 Android Keystore 里、不可导出，所以拷走文件也解不开 —— 但 App 自己当然能还原（它要拿去登录），设备被 root 或进程被调试时密码仍然是明文。
 
 ## 周次和日期怎么对上
 
@@ -276,7 +276,7 @@ object CoordinateConverter {
 几个实现上的取舍：
 
 - 没用 Glance，走的是经典 `RemoteViews`。行数最多十来条，`RemoteViews.addView()` 现场拼就够了，省掉一整套 Glance 依赖
-- 行数是**按格子高度算**的：`AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT` 减去固定开销（内边距 + 头部 + 标题 + 脚注约 92dp）除以每行 41dp，所以你把卡片拉大就能多看几门，装不下的折叠成「还有 N 门」
+- 行数是**按格子高度算**的：`AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT` 减去固定开销（内边距 + 头部 + 标题 + 脚注 `FIXED_HEIGHT_DP = 84`）除以每行 `ROW_HEIGHT_DP = 42`，所以你把卡片拉大就能多看几门，装不下的折叠成「还有 N 门」
 - 刷新时机：系统按 `updatePeriodMillis`（30 分钟）拉一次；另外 App 启动、同步完成、导入课表、清空课表都会主动 `refreshAll()`，所以改完课表回桌面立刻就是新的
 - 深色模式适配走 `values-night/colors.xml`，卡片底色和文字颜色各一套
 
@@ -288,7 +288,7 @@ object CoordinateConverter {
 | 存的内容 | 存在哪 | 形态 |
 | --- | --- | --- |
 | 教务地址、学号、密码 | `SharedPreferences` → `jw_base` / `jw_user` / `jw_pass` | `ks1:` + base64(iv ‖ ciphertext) |
-| 整份课表（含每门课的周次串） | `jw_data` | 同上 |
+| 整份课表（含每门课的周次串） | `tt_data` | 同上 |
 | 签到链接（NFC 读到的那条） | `checkin_url` | 同上 |
 | 学期、上次同步时间 | `jw_term` / `last_sync` | 明文（不含身份信息） |
 
@@ -314,9 +314,9 @@ object CoordinateConverter {
 ## 隐私
 
 - 除了导入课表时和你学校的教务系统通信，不联网，没有统计，没有日志上传
-- **默认只走 https**：`res/xml/network_security_config.xml` 里 `base-config` 关掉了明文，只对 `edu.cn` / `edu` 域名和本机回环开了口子 —— 不少学校教务只有 http 入口，密码虽然先过 RSA，但 JSESSIONID、学号、课表 JSON 在链路上是明文的。你学校要是不在 edu 域名下，把域名加进那个列表
+- **明文的教务入口不拦，但会提醒**：正方大量部署在 `http://` 上，硬禁等于把一半学校挡在门外。所以导入时检测到你填的是 `http://`，界面上会有一行黄字说明代价（密码先过 RSA，但学号、课表、cookie 在链路上是明文）。学校有 https 入口就用 https
 - 读到的链接、账号、密码、课表都只存在 App 私有目录里，且都是密文（见上面「数据怎么存的」）
-- 权限一共五个，都不是「悄悄翻你东西」：`NFC`（读卡）、`ACCESS_MOCK_LOCATION`（进开发者选项的模拟位置列表）、`ACCESS_FINE_LOCATION` + `ACCESS_COARSE_LOCATION`（Android 10~13 上 location 类型前台服务的硬性要求，App 自己不读定位）、`POST_NOTIFICATIONS`（模拟定位时那条常驻通知）
+- 权限一共这五个，都不是「悄悄翻你东西」：`NFC`（读卡）、`ACCESS_MOCK_LOCATION`（进开发者选项的模拟位置列表）、`ACCESS_FINE_LOCATION` + `ACCESS_COARSE_LOCATION`（Android 10~13 上 location 类型前台服务的硬性要求，App 自己不读定位）、`POST_NOTIFICATIONS`（模拟定位时那条常驻通知）
 
 ## 边界
 
