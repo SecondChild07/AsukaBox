@@ -216,8 +216,17 @@ fun LocationScreen(
                 if (running) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = if (pushed > 0) "已推送 $pushed 次" else "还没推送出去",
-                        color = palette.textTertiary,
+                        text = buildString {
+                            append(if (pushed > 0) "已推送 $pushed 次" else "还没推送出去")
+                            val last = MockLocationService.lastPushAt
+                            if (last > 0) {
+                                val secs = ((System.currentTimeMillis() - last) / 1000).coerceAtLeast(0)
+                                append(" · 最后 ${secs}s 前")
+                            }
+                            val ow = MockLocationService.overwrittenCount
+                            if (ow > 0) append(" · 被覆盖 $ow 次")
+                        },
+                        color = if (MockLocationService.overwrittenCount > 0) palette.warn else palette.textTertiary,
                         fontSize = 11.sp,
                     )
                 }

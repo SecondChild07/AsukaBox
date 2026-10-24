@@ -65,6 +65,8 @@ class MockLocationService : Service() {
                 val label = intent.getStringExtra(EXTRA_LABEL).orEmpty()
                 lastError = ""
                 pushedCount = 0L
+                overwrittenCount = 0
+                lastPushAt = 0L
                 startForegroundSafely(label)
                 startLoop()
             }
@@ -166,6 +168,10 @@ class MockLocationService : Service() {
             while (mocking) {
                 push(manager, currentLat, currentLon)
                 ticks++
+                // 每 10 次（5 秒）自检一次：读回来看看有没有被真实位置盖掉
+                if (ticks % 10 == 0) {
+                    runCatching { verify(manager) }
+                }
                 // 每 20 次（10 秒）重申一次：有些 ROM 会把 test provider 状态悄悄重置
                 if (ticks % 20 == 0) {
                     runCatching { ensureProviders(manager) }
@@ -258,6 +264,33 @@ class MockLocationService : Service() {
                 .onFailure { if (lastError.isEmpty()) lastError = "setTestProviderLocation($name)：${it.javaClass.simpleName} ${it.message}" }
         }
         pushedCount++
+        lastPushAt = System.currentTimeMillis()
+    }
+
+    /**
+     * 自检：读回各 provider 的 last known location，看还是不是我们写的那个坐标。
+     * 如果不是，说明有别的东西（GNSS 硬件、高德自己算的网络定位）把它盖掉了。
+     */
+    private fun verify(manager: LocationManager) {
+        var bad = 0
+        var sample = ""
+        PROVIDERS.forEach { name ->
+            runCatching {
+                val last = manager.getLastKnownLocation(name) ?: return@runCatching
+                val dLat = kotlin.math.abs(last.latitude - currentLat)
+                val dLon = kotlin.math.abs(last.longitude - currentLon)
+                if (dLat > 0.0005 || dLon > 0.0005) {
+                    bad++
+                    if (sample.isEmpty()) {
+                        sample = "$name ${"%.5f".format(last.latitude)},${"%.5f".format(last.longitude)}"
+                    }
+                }
+            }
+        }
+        if (bad > 0) {
+            overwrittenCount += bad
+            lastError = "有 $bad 个 provider 被真实位置盖掉了（最新：$sample）"
+        }
     }
 
     companion object {
@@ -280,6 +313,16 @@ class MockLocationService : Service() {
             LocationManager.GPS_PROVIDER,
             LocationManager.NETWORK_PROVIDER,
         )
+
+        /** 最近一次成功推送的时间戳，界面用它算「N 秒前」 */
+        @Volatile
+        var lastPushAt: Long = 0L
+            private set
+
+        /** 自检发现被真实位置盖掉的累计次数 */
+        @Volatile
+        var overwrittenCount: Int = 0
+            private set
 
         /** 服务是否正在跑，给界面用 */
         @Volatile
