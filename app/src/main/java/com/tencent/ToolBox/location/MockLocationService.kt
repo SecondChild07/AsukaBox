@@ -13,6 +13,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Process
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
@@ -45,6 +46,15 @@ class MockLocationService : Service() {
     @Volatile
     private var mocking = false
 
+    /** 用户点了「停止」——只有这种情况才把 provider 交还系统 */
+    private var userStopped = false
+
+    /** 服务被系统回收时置 true，让推送线程别去 releaseProviders */
+    @Volatile
+    private var keepAlive = false
+
+    private var wakeLock: PowerManager.WakeLock? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -65,6 +75,7 @@ class MockLocationService : Service() {
             }
 
             ACTION_STOP -> {
+                userStopped = true
                 stopLoop()
                 stopSelf()
             }
@@ -73,8 +84,25 @@ class MockLocationService : Service() {
     }
 
     override fun onDestroy() {
-        stopLoop()
+        // 只有用户主动点「停止」才真的把 provider 交还系统。
+        // 被系统回收（国产 ROM 很爱干这个）时保持 mock 状态，位置冻结在最后一点，
+        // 好过整块跳回真实位置 —— 配合 START_STICKY 起来之后接着推。
+        if (!userStopped) {
+            keepAlive = true
+            stopLoopWorkerOnly()
+        } else {
+            stopLoop()
+        }
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
         super.onDestroy()
+    }
+
+    /** 只把推送线程停下，不动 provider 状态 */
+    private fun stopLoopWorkerOnly() {
+        mocking = false
+        worker?.interrupt()
+        worker = null
     }
 
     private fun startForegroundSafely(label: String) {
@@ -125,24 +153,45 @@ class MockLocationService : Service() {
 
     private fun startLoop() {
         stopLoop()
+        userStopped = false
+        keepAlive = false
         val manager = getSystemService(LocationManager::class.java) ?: return
         mocking = true
         isRunning = true
+        acquireWakeLock()
 
         worker = Thread({
             ensureProviders(manager)
+            var ticks = 0
             while (mocking) {
                 push(manager, currentLat, currentLon)
+                ticks++
+                // 每 20 次（10 秒）重申一次：有些 ROM 会把 test provider 状态悄悄重置
+                if (ticks % 20 == 0) {
+                    runCatching { ensureProviders(manager) }
+                }
                 try {
                     Thread.sleep(INTERVAL_MS)
                 } catch (_: InterruptedException) {
                     break
                 }
             }
-            releaseProviders(manager)
+            // 用户主动停止才交还；被动销毁时保留 mock 状态，位置冻结而非跳回真实
+            if (!keepAlive) releaseProviders(manager)
         }, "mock-location").apply {
             isDaemon = true
             start()
+        }
+    }
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        runCatching {
+            val pm = getSystemService(PowerManager::class.java) ?: return
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AsukaBox:mockLocation").apply {
+                setReferenceCounted(false)
+                acquire(12 * 60 * 60 * 1000L)
+            }
         }
     }
 
