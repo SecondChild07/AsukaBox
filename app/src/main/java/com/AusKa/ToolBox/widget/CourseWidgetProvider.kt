@@ -69,8 +69,7 @@ class CourseWidgetProvider : AppWidgetProvider() {
 
         const val ACTION_REFRESH = "com.AusKa.ToolBox.action.WIDGET_REFRESH"
 
-        /** 卡片里除了课程行之外的固定开销（内边距 + 头部 + 标题 + 脚注，单位 dp） */
-        /** 一行课占的高度（dp），和 widget_course_row.xml 对齐 */
+        /** 星期几的中文简称，下标 0 = 周一 */
         private val DAY_NAMES = arrayOf("一", "二", "三", "四", "五", "六", "日")
 
         /** 把所有已放上桌面的实例重画一遍 */

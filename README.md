@@ -191,7 +191,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:testDebugUnitTest
 ```
 
-19 个单元测试，全部对着纯函数打，不需要真机也不需要模拟器：
+30 个单元测试，全部对着纯函数打，不需要真机也不需要模拟器：
 
 | 测试 | 覆盖 |
 |---|---|
@@ -199,6 +199,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | `UrlPickerTest` | 链接打分与排序、`\u002f` 转义还原、去重、短串不误判 |
 | `CoordinateTest` | GCJ-02 ↔ WGS-84 双向转换、往返误差 < 1 米、境外坐标原样返回 |
 | `WidgetRowsTest` | 小组件行数按高度换算，含上限 6 行与地板 1 行 |
+| `LoginJudgeTest` | 登录成功判定（重定向 / 正文痕迹 / 兜底）、从 `tips`/`bg_danger`/JSON 里抠错误提示 |
 
 单双周那条是回归测试：早期版本把「有没有双字」当成整串标志，`1-3周,6-8周(双),9-18周` 里 `9-18` 整段被砍掉，表现为「第 9 周之后某门课凭空消失」。
 
@@ -289,6 +290,7 @@ object CoordinateConverter {
 | --- | --- | --- |
 | 教务地址、学号、密码 | `SharedPreferences` → `jw_base` / `jw_user` / `jw_pass` | `ks1:` + base64(iv ‖ ciphertext) |
 | 整份课表（含每门课的周次串） | `tt_data` | 同上 |
+| 上次登录的 JSESSIONID | `jw_session` | 同上（优先复用它，省掉一次密码登录） |
 | 签到链接（NFC 读到的那条） | `checkin_url` | 同上 |
 | 学期、上次同步时间 | `jw_term` / `last_sync` | 明文（不含身份信息） |
 
@@ -310,6 +312,8 @@ object CoordinateConverter {
   - 绿色 **「课表已更新 · xx:xx」** —— 这次拉到了新数据，时间是成功那一刻
   - 橙色 **「未更新成功 · 点「重新导入」重试」** —— 网络不通 / 系统没响应 / 要验证码（静默路径填不了）
   - 没配过账号时不显示这行；手动导入成功也记一次「已更新」
+
+**不会每次都登录**：先试上次留下的 `JSESSIONID`，能拉到课表就不碰密码；失效了才正常登录一次，登录成功后再把它存回去。再加上 30 分钟内不重复同步 —— 转屏、切深色、反复开关 App 都不会在网页端把你踢下线。
 
 ## 隐私
 

@@ -39,10 +39,18 @@ class JwglxtException(message: String) : Exception(message)
  *
  * 没用 OkHttp —— 这里只有五个请求、cookie 也就两三个，手写 [CookieJar] 比拖进来 800KB 的依赖划算。
  */
-class JwglxtSession(rawBase: String) {
+class JwglxtSession(rawBase: String, initialCookie: String? = null) {
 
     val base: String = normalizeBase(rawBase)
-    private val jar = CookieJar()
+    private val jar = CookieJar().apply {
+        // 上次登录留下的 JSESSIONID：能直接复用就省一次登录（正方有异地互踢和频率限制）
+        initialCookie?.substringBefore(';')?.split('=')?.let { kv ->
+            if (kv.size >= 2) put(kv[0].trim(), kv.drop(1).joinToString("=").trim())
+        }
+    }
+
+    /** 当前会话的 cookie 串，登录成功后交给上层存起来下次复用 */
+    val sessionCookie: String? get() = jar.header()
     private val ua = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
 
@@ -127,14 +135,7 @@ class JwglxtSession(rawBase: String) {
             referer = "$base$p/xtgl/login_slogin.html",
         )
 
-        // Android 的 HttpURLConnection 跟完重定向后 getURL() 不一定更新成最终地址，
-        // 所以不能只看 URL —— 登录成功页本身就带着 initMenu 的痕迹，用它判断更稳。
-        val ok = finalUrl.contains("index_initMenu") ||
-            finalUrl.contains("xtgl/index") ||
-            body.contains("index_initMenu") ||
-            body.contains("initMenu") ||
-            (!body.contains("login_slogin") && !body.contains("csrftoken"))
-        if (!ok) {
+        if (!loginSucceeded(finalUrl, body)) {
             throw JwglxtException(loginErrorText(body))
         }
     }
@@ -196,25 +197,7 @@ class JwglxtSession(rawBase: String) {
 
     // ---------------------------------------------------------------- 内部
 
-    private fun loginErrorText(body: String): String {
-        val patterns = listOf(
-            """id="tips"[^>]*>(.*?)</div>""",
-            """id=["']tips["'][^>]*>([^<]{4,})""",
-            """class="[^"]*(?:bg_danger|sl_danger|tips)[^"]*"[^>]*>(.*?)</div>""",
-            """class="[^"]*(?:bg_danger|sl_danger|tips)[^"]*"[^>]*>([^<]{4,})""",
-            """"message"\s*:\s*"([^"]+)"""",
-            """"msg"\s*:\s*"([^"]+)"""",
-        )
-        for (p in patterns) {
-            val hit = Regex(p, RegexOption.DOT_MATCHES_ALL)
-                .find(body)?.groupValues?.get(1)
-                ?.replace(Regex("<[^>]+>"), "")
-                ?.trim()
-            if (!hit.isNullOrBlank()) return hit
-        }
-        // 拿不到具体文案时，别只说「失败了」，把最可能的原因按顺序说清楚
-        return "登录没通过：账号或密码不对。如果确认密码没错，可能是学校改了登录方式（比如要走统一身份认证）"
-    }
+    private fun loginErrorText(body: String): String = extractLoginError(body)
 
     /**
      * 正方的前端用 jsbn 做 RSA，做法是 `hex2b64(rsaKey.encrypt(pwd))`：
@@ -351,6 +334,46 @@ class JwglxtSession(rawBase: String) {
     }
 }
 
+/**
+ * 登录到底成功没有。
+ *
+ * 不能只看最终 URL：Android 的 `HttpURLConnection` 跟完重定向后 `getURL()` 不保证更新，
+ * 而正方有些部署登录成功也不会 302 到 initMenu。所以三条信号任一成立就算过了。
+ *
+ * 抽成顶层纯函数是为了能单测 —— 这几句最容易因学校差异出错。
+ */
+internal fun loginSucceeded(finalUrl: String, body: String): Boolean =
+    finalUrl.contains("index_initMenu") ||
+        finalUrl.contains("xtgl/index") ||
+        body.contains("index_initMenu") ||
+        body.contains("initMenu") ||
+        (!body.contains("login_slogin") && !body.contains("csrftoken"))
+
+/**
+ * 从登录失败页里把服务端给的提示抠出来。
+ *
+ * 各校模板差得远（有的用 `id="tips"`，有的用 `class="bg_danger"`，有的直接返 JSON），
+ * 依次试几种；都抠不到就给一句能指导用户动作的话。
+ */
+internal fun extractLoginError(body: String): String {
+    val patterns = listOf(
+        """id="tips"[^>]*>(.*?)</div>""",
+        """id=["']tips["'][^>]*>([^<]{4,})""",
+        """class="[^"]*(?:bg_danger|sl_danger|tips)[^"]*"[^>]*>(.*?)</div>""",
+        """class="[^"]*(?:bg_danger|sl_danger|tips)[^"]*"[^>]*>([^<]{4,})""",
+        """"message"\s*:\s*"([^"]+)"""",
+        """"msg"\s*:\s*"([^"]+)"""",
+    )
+    for (p in patterns) {
+        val hit = Regex(p, RegexOption.DOT_MATCHES_ALL)
+            .find(body)?.groupValues?.get(1)
+            ?.replace(Regex("<[^>]+>"), "")
+            ?.trim()
+        if (!hit.isNullOrBlank()) return hit
+    }
+    return "登录没通过：账号或密码不对。如果确认密码没错，可能是学校改了登录方式（比如要走统一身份认证）"
+}
+
 /** 极简 cookie 罐：正方整套流程只靠一个 JSESSIONID 串起会话 */
 class CookieJar {
     private val map = LinkedHashMap<String, String>()
@@ -369,6 +392,13 @@ class CookieJar {
 
     fun header(): String? =
         if (map.isEmpty()) null else map.entries.joinToString("; ") { "${it.key}=${it.value}" }
+
+    /** 复用上次登录留下的 session：直接把 JSESSIONID 塞回罐里，省掉一次登录 */
+    fun put(name: String, value: String) {
+        if (value.isNotBlank()) map[name] = value
+    }
+
+    fun get(name: String): String? = map[name]
 
     fun clear() = map.clear()
 }

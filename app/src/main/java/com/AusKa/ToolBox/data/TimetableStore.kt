@@ -57,6 +57,17 @@ class TimetableStore private constructor(context: Context) {
         get() = prefs.getLong(KEY_SYNCED, 0L)
         set(value) = prefs.edit().putLong(KEY_SYNCED, value).apply()
 
+    /**
+     * 上次登录留下的 JSESSIONID（加密存）。
+     *
+     * 有它就优先复用、跳过登录 —— 正方 session 一般能活半小时到几小时，
+     * 这样「每次打开自动同步」不必每次都拿密码登录一次（很多学校对频繁登录会互踢或限流）。
+     * 失效了就正常登录，登录成功后再刷新这个值。
+     */
+    var sessionCookie: String
+        get() = readField(KEY_SESSION) { it.contains('=') }
+        set(value) = prefs.edit().putString(KEY_SESSION, SecretBox.seal(value)).apply()
+
     /** 记一次自动同步的结果；成功才推进 lastSyncAt */
     fun markSync(ok: Boolean) {
         prefs.edit()
@@ -120,6 +131,7 @@ class TimetableStore private constructor(context: Context) {
             KEY_USER to { s: String -> s.isNotBlank() && s.length <= 64 },
             KEY_PASS to { s: String -> s.isNotBlank() },
             KEY_TABLE to { s: String -> s.trimStart().startsWith("{") },
+            KEY_SESSION to { s: String -> s.contains('=') },
         )
         val edit = prefs.edit()
         var dirty = false
@@ -137,7 +149,8 @@ class TimetableStore private constructor(context: Context) {
     private fun readSyncOk(): Boolean? =
         if (prefs.contains(KEY_SYNC_OK)) prefs.getBoolean(KEY_SYNC_OK, false) else null
 
-    private fun readTimetable(): Timetable? {        val raw = readField(KEY_TABLE) { it.trimStart().startsWith("{") }
+    private fun readTimetable(): Timetable? {
+        val raw = readField(KEY_TABLE) { it.trimStart().startsWith("{") }
         if (raw.isBlank()) return null
         val t = runCatching { fromJson(JSONObject(raw)) }.getOrNull() ?: return null
         if (t.courses.isEmpty()) {
@@ -235,5 +248,6 @@ class TimetableStore private constructor(context: Context) {
         private const val KEY_TABLE = "tt_data"
         private const val KEY_SYNCED = "last_sync"
         private const val KEY_SYNC_OK = "sync_ok"
+        private const val KEY_SESSION = "jw_session"
     }
 }

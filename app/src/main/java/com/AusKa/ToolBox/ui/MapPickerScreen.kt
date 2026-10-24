@@ -3,6 +3,7 @@ package com.AusKa.ToolBox.ui
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -106,13 +107,25 @@ fun MapPickerScreen(
                         )
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        // allowFileAccess 是加载 file:///android_asset/ 所必需的，
+                        // 但 allowContentAccess（content:// 随便读）用不上，关掉。
+                        // 两样都开到最松 + addJavascriptInterface 是典型的危险组合。
                         settings.allowFileAccess = true
-                        settings.allowContentAccess = true
-                        settings.cacheMode = WebSettings.LOAD_NO_CACHE
+                        settings.allowContentAccess = false
+                        settings.allowFileAccessFromFileURLs = false
+                        settings.allowUniversalAccessFromFileURLs = false
+                        // 用默认缓存：原来的 LOAD_NO_CACHE 让每次打开都重下全部瓦片
+                        settings.cacheMode = WebSettings.LOAD_DEFAULT
                         settings.setSupportZoom(true)
                         settings.builtInZoomControls = true
                         settings.displayZoomControls = false
                         webViewClient = object : WebViewClient() {
+                            // 只允许留在本地页：地图里任何外链都不该把整个 WebView 带走
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView?,
+                                request: WebResourceRequest?,
+                            ): Boolean = !(request?.url?.toString()?.startsWith("file:///android_asset/") == true)
+
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 view?.evaluateJavascript(
                                     "window.setPoint(${gcjStart.first}, ${gcjStart.second}, 16);",
@@ -122,6 +135,13 @@ fun MapPickerScreen(
                         }
                         addJavascriptInterface(Bridge { la, lo -> picked = la to lo }, "Android")
                         loadUrl("file:///android_asset/map.html")
+                    }
+                },
+                onRelease = { wv ->
+                    runCatching {
+                        wv.stopLoading()
+                        (wv.parent as? android.view.ViewGroup)?.removeView(wv)
+                        wv.destroy()
                     }
                 },
             )

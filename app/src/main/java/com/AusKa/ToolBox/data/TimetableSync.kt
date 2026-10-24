@@ -87,21 +87,36 @@ object TimetableSync {
                 }
             }
 
-            val session = JwglxtSession(base)
-            val page = session.openLoginPage()
-            if (page.needCaptcha) {
-                store.markSync(false)
-                return@withContext Result.NeedCaptcha
+            // 先试上次留下的 session：能直接拉就不必拿密码登录（正方有频率限制和异地互踢）
+            var session: JwglxtSession? = null
+            var fresh: Timetable? = null
+            val cachedCookie = store.sessionCookie
+            if (cachedCookie.isNotBlank()) {
+                val reused = JwglxtSession(base, initialCookie = cachedCookie)
+                fresh = runCatching { reused.fetchTimetable(year, term) }.getOrNull()
+                if (fresh != null) session = reused
             }
 
-            session.login(user, pass, null, page)
-            val fresh = session.fetchTimetable(year, term)
+            if (fresh == null) {
+                val s2 = JwglxtSession(base)
+                val page = s2.openLoginPage()
+                if (page.needCaptcha) {
+                    store.markSync(false)
+                    return@withContext Result.NeedCaptcha
+                }
+                s2.login(user, pass, null, page)
+                session = s2
+                fresh = s2.fetchTimetable(year, term)
+                // 登录成功，把新会话存下来给下次用
+                s2.sessionCookie?.let { store.sessionCookie = it }
+            }
 
             // 开学日期沿用用户校准过的；没有就按学期估
+            val tt = fresh ?: throw JwglxtException("没拿到课表数据")
             val startDate = cached?.startDate?.takeIf { it.isNotBlank() }
                 ?: TermCalendar.format(TermCalendar.estimateStart(year, term))
 
-            store.save(fresh.copy(startDate = startDate))
+            store.save(tt.copy(startDate = startDate))
             store.termKey = "$year-$term"
             store.markSync(true)
             Result.Updated
