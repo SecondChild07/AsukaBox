@@ -254,7 +254,6 @@ private fun WeekHeader(
                         append(TermCalendar.monthDay(start))
                         append(" - ")
                         append(TermCalendar.monthDay(end))
-                        if (timetable.studentName.isNotBlank()) append(" · ${timetable.studentName}")
                     },
                     color = palette.textTertiary,
                     fontSize = 11.sp,
