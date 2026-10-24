@@ -26,7 +26,7 @@
 
 ## 它干什么
 
-三个功能。除课表导入那一下，都不联网。
+四个入口：NFC 签到、课表导入、虚拟定位、桌面小组件。只有课表同步和地图瓦片需要联网，其余都在本地跑。
 
 ### 1. NFC 签到
 
@@ -59,7 +59,7 @@
 
 每 100 毫秒推一次，provider 属性和 Location 字段都按真实 GPS 的规格配（高功耗 + 精确定位 + `satellites=7`），这样定位 SDK 才不会把它当成不可信的源丢掉。
 
-不用 root，不装 Xposed。代价是：打车、考勤这类会查 `isFromMockProvider()` 的 App 仍然可能识破。
+不用 root，不装 Xposed。代价是：坐标必须持续灌，服务一停系统立刻回真实位置（所以用前台服务 + 常驻通知）；打车、考勤这类会查 `isFromMockProvider()` 的 App 仍可能识破；蓝牙 / WiFi 定位不走这两个 provider，改不了。
 
 <img src="docs/screenshot-location.png" width="270" alt="虚拟定位">
 
@@ -222,21 +222,8 @@ keytool -genkeypair -keystore app/release.jks -alias mykey \
 
 **但开源之后要清楚：** 上面这些检测逻辑现在都公开了，绕过成本比闭源时低不少。真挡得住的是「改个图标重新打包发出去」这种人（签名校验一关就死），挡不住拿 Frida 专门盯你的人。要更强只能上 native 层校验或者商业壳。
 
-## 虚拟定位
-
-<p align="center"><img src="docs/screenshot-location.png" width="270" alt="虚拟定位"></p>
-
-功能列表第三项。把手机的 GPS / 网络定位一起钉在某个经纬度上，用来打卡、测试、或者给 App 演一个"我在别处"。
-
-没有 root，也没用 Xposed —— 走的是 Android 自带的 **test provider** 这条路：
-
-1. 你在系统「开发者选项 → 选择模拟位置信息应用」里把明日箱选上（这一步只能手动做，任何 App 都改不了这个开关）
-2. 明日箱往 `gps` 和 `network` 两个 provider 里每秒灌一次坐标
-3. 别的 App 通过 `LocationManager` 拿到的就是这份坐标
-
-所以它只改「模拟位置」这一层，不碰系统文件、不装模块。用 `adb shell dumpsys location` 能看到 `gps provider [mock]`。
-
 坐标怎么给：点「在地图上选点」拖地图点一下（高德底图），或者手填/从剪贴板粘（会自己从一段文字里抠出「纬度, 经度」）。
+
 
 地图这块有一个必须处理的坐标系问题：**高德瓦片是 GCJ-02，系统 GPS provider 要 WGS-84**，两者在北京差约 600 米。所以页面上同时显示两个坐标 —— 上面是你在地图上点的（GCJ-02），下面是真正写进系统的（转成 WGS-84 之后的）：
 
@@ -300,7 +287,7 @@ object CoordinateConverter {
 - 有账号 → 后台登进正方重新拉一遍课表，成功就覆盖缓存，课表页因为是 `collectAsState()` 所以自己就变了，不用手动刷新
 - 没有账号 / 需要验证码 / 网络不通 → 安静地留着旧数据，只有「需要验证码」和「真失败」才弹一条 Toast 说明原因（静默路径没法帮用户填验证码，那种情况得去课表页点「重新导入」）
 - 整个过程中 `Dispatchers.IO`，并且在飞的时候有 `running` 标志防重入，不会因为反复切前后台打一串请求
-- 同步结果会记在 `TimetableStore` 的 `syncOkFlow` 里，课表页在「第 N 周 · 日期 · 学生名」下面显示一行：
+- 同步结果会记在 `TimetableStore` 的 `syncOkFlow` 里，课表页在「第 N 周 · 日期」下面显示一行：
   - 绿色 **「课表已更新 · 14:23」** —— 这次拉到了新数据，时间是成功那一刻
   - 橙色 **「未更新成功 · 点「重新导入」重试」** —— 网络不通 / 系统没响应 / 要验证码（静默路径填不了）
   - 没配过账号时不显示这行；手动导入成功也记一次「已更新」
@@ -309,7 +296,7 @@ object CoordinateConverter {
 
 - 除了导入课表时和你学校的教务系统通信，不联网，没有统计，没有日志上传
 - 读到的链接、账号、密码、课表都只存在 App 私有目录里，且都是密文（见上面「数据怎么存的」）
-- 只申请了一个权限：`NFC`
+- 权限一共五个，都不是「悄悄翻你东西」：`NFC`（读卡）、`ACCESS_MOCK_LOCATION`（进开发者选项的模拟位置列表）、`ACCESS_FINE_LOCATION` + `ACCESS_COARSE_LOCATION`（Android 10~13 上 location 类型前台服务的硬性要求，App 自己不读定位）、`POST_NOTIFICATIONS`（模拟定位时那条常驻通知）
 
 ## 免责
 
