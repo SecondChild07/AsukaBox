@@ -82,7 +82,7 @@
 | 4 | `POST {前缀}/xtgl/login_slogin.html` | 密码 RSA 加密后提交 |
 | 5 | `POST {base}/kbcx/xskbcx_cxXsKb.html?gnmkdm=N2151` | 拿 `kbList` JSON |
 
-**前缀不是固定的。** 大多数学校是 `/jwglxt`，也有直接把这一层去掉、登录页就在 `/xtgl/...` 的（河北工程就是这样）。所以 `openLoginPage()` 会挨个试 `""` 和 `"/jwglxt"`，哪个返回的 HTML 里有 `csrftoken` 就用哪个；课表接口的前缀还可能和登录不一样，`fetchTimetable()` 再试一轮。填地址时也可以直接把课表页的地址粘进去，`normalizeBase()` 会自动截到域名。
+**前缀不是固定的。** 大多数学校是 `/jwglxt`，也有直接把这一层去掉、登录页就在 `/xtgl/...` 的（某高校就是这样）。所以 `openLoginPage()` 会挨个试 `""` 和 `"/jwglxt"`，哪个返回的 HTML 里有 `csrftoken` 就用哪个；课表接口的前缀还可能和登录不一样，`fetchTimetable()` 再试一轮。填地址时也可以直接把课表页的地址粘进去，`normalizeBase()` 会自动截到域名。
 
 几个踩过的点（每一条都真的会让人卡半天）：
 

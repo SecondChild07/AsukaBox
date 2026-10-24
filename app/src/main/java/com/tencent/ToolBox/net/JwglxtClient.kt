@@ -23,7 +23,7 @@ class JwglxtException(message: String) : Exception(message)
  * 正方教务系统客户端。
  *
  * 不同学校部署的**路径前缀不一样**：常见是 `/jwglxt/xtgl/login_slogin.html`，
- * 也有把 jwglxt 干掉、直接 `/xtgl/login_slogin.html` 的（河北工程就是这种）。
+ * 也有把 jwglxt 干掉、直接 `/xtgl/login_slogin.html` 的（某高校就是这种）。
  * 所以前缀不能写死，第一次用的时候探一下，登录页能返回带 csrftoken 的 HTML 就算命中。
  *
  * 登录流程：
