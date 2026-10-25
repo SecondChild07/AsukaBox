@@ -305,6 +305,8 @@ class MockLocationService : Service() {
      * 自检：读回各 provider 的 last known location，看还是不是我们写的那个坐标。
      * 如果不是，说明有别的东西（GNSS 硬件、高德自己算的网络定位）把它盖掉了。
      */
+    // 只读我们自己注册的 test provider，且整体包在 runCatching 里；SDK 仍要求显式声明
+    @android.annotation.SuppressLint("MissingPermission")
     private fun verify(manager: LocationManager) {
         var bad = 0
         var sample = ""
@@ -438,7 +440,11 @@ class MockLocationService : Service() {
                 putExtra(EXTRA_LON, lon)
                 putExtra(EXTRA_LABEL, label)
             }
-            context.startForegroundService(intent)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         }
 
         /** 只换坐标，不动服务（摇杆每动一下就调一次） */

@@ -222,7 +222,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 private fun requestWidgetPin(context: android.content.Context) {
     val manager = android.appwidget.AppWidgetManager.getInstance(context)
     val provider = android.content.ComponentName(context, com.AusKa.ToolBox.widget.CourseWidgetProvider::class.java)
-    if (manager.isRequestPinAppWidgetSupported) {
+    val canPin = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+        manager.isRequestPinAppWidgetSupported
+    if (canPin) {
         manager.requestPinAppWidget(provider, null, null)
     } else {
         android.widget.Toast

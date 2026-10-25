@@ -46,6 +46,29 @@ jobs:
           echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > "${GITHUB_WORKSPACE}/release.jks"
           ls -l "${GITHUB_WORKSPACE}/release.jks"
 
+      # assets 里的 JS 不在任何单测覆盖范围内，改完很容易像上次那样多一个 }); 就整页停摆
+      - name: Check assets JS syntax
+        run: |
+          python3 - <<'PY'
+          import re, subprocess, tempfile, pathlib, sys
+          html = pathlib.Path("app/src/main/assets/map.html").read_text(encoding="utf-8")
+          blocks = re.findall(r"<script>(.*?)</script>", html, re.S)
+          print(f"{len(blocks)} script block(s) in map.html")
+          bad = 0
+          for i, b in enumerate(blocks):
+              with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
+                  f.write(b)
+                  name = f.name
+              r = subprocess.run(["node", "--check", name], capture_output=True, text=True)
+              if r.returncode == 0:
+                  print(f"  block {i}: ok ({len(b)} chars)")
+              else:
+                  bad += 1
+                  print(f"  block {i}: FAILED")
+                  print(r.stderr)
+          sys.exit(1 if bad else 0)
+          PY
+
       - name: Unit tests
         run: |
           chmod +x gradlew

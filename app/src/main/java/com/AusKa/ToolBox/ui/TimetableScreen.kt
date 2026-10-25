@@ -103,10 +103,11 @@ fun TimetableScreen(
             .fillMaxSize()
             .padding(horizontal = 14.dp),
     ) {
-        if (timetable == null) {
+        val current = timetable
+        if (current == null) {
             EmptyTimetable(onImport = { showImport = true })
         } else {
-            val t = timetable!!
+            val t = current
             WeekHeader(
                 timetable = t,
                 week = week,
@@ -144,8 +145,9 @@ fun TimetableScreen(
         )
     }
 
-    if (showCalibrate && timetable != null) {
-        val t = timetable!!
+    val calibrating = if (showCalibrate) timetable else null
+    if (calibrating != null) {
+        val t = calibrating
         WeekCalibrateDialog(
             currentWeek = week,
             maxWeek = t.maxWeek,
@@ -215,7 +217,7 @@ private fun EmptyTimetable(onImport: () -> Unit) {
 private fun clockOf(millis: Long): String {
     if (millis <= 0L) return ""
     val cal = Calendar.getInstance().apply { timeInMillis = millis }
-    return String.format("%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
+    return String.format(java.util.Locale.US, "%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
 }
 
 @Composable
