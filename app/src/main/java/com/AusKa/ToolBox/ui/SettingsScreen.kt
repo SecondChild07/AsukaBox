@@ -15,7 +15,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -166,6 +165,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 TextButton(onClick = {
                     ttStore.wipeAccount()
                     urlStore.autoCheckin = false
+                    // 开关的本地状态也得跟着关，否则这一行会一直显示「开」到离开设置页
+                    autoCheckin = false
                     confirmWipe = false
                 }) { Text("删除") }
             },
@@ -203,8 +204,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    AmapKeyStore.set(app, keyDraft)
-                    amapKey = keyDraft.trim()
+                    // 从网页复制来的 key 常带首尾空格或折行：存和显示都走 trim，
+                    // 不然盘里那份带着空白，界面显示「已填」，请求却永远 INVALID_USER_KEY
+                    val k = keyDraft.trim()
+                    AmapKeyStore.set(app, k)
+                    amapKey = k
                     editKey = false
                 }) { Text("保存") }
             },

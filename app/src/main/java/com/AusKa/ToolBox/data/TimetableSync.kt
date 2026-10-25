@@ -24,6 +24,9 @@ object TimetableSync {
     /** 两次成功同步之间的最小间隔。 */
     private const val MIN_INTERVAL_MS = 30 * 60 * 1000L
 
+    /** 确认过「这个学期还没排课」之后，隔多久再探一次（开学前学校随时可能把课放上去） */
+    private const val EMPTY_RECHECK_MS = 4 * 60 * 60 * 1000L
+
     /** 「已经有人在同步」时给 UI 的原因串，MainActivity 靠它决定要不要弹 Toast。 */
     const val BUSY = "正在同步"
 
@@ -96,6 +99,14 @@ object TimetableSync {
                 }
             }
 
+            // 这个学期上次已经确认过「还没排课」：别再拿密码去撞一次登录。
+            // 开学前一周每天开好几次 App，每次都是一次完整登录 —— 学校的失败锁定和互踢是真会触发的。
+            if (!force && store.emptyTermKey == "$year-$term" &&
+                System.currentTimeMillis() - store.emptyCheckedAt < EMPTY_RECHECK_MS
+            ) {
+                return@withContext Result.EmptyTerm
+            }
+
             // 先试上次留下的 session：能直接拉就不必拿密码登录（正方有频率限制和异地互踢）
             var session: JwglxtSession? = null
             var fresh: Timetable? = null
@@ -125,13 +136,20 @@ object TimetableSync {
                 s2.sessionCookie?.let { store.sessionCookie = it }
             }
 
-            // 开学日期沿用用户校准过的；没有就按学期估
+            // 开学日期：同一学期才沿用（那份可能是用户校准过的），换学期要按新学期重估
             val tt = fresh ?: throw JwglxtException("没拿到课表数据")
-            val startDate = cached?.startDate?.takeIf { it.isNotBlank() }
-                ?: TermCalendar.format(TermCalendar.estimateStart(year, term))
+            val startDate = TermCalendar.startDateFor(tt, cached)
 
+            val termKeyNow = "$year-$term"
             val wrote = store.save(tt.copy(startDate = startDate))
-            store.termKey = "$year-$term"
+            // termKey 记的是「最后一次确认的学期」：空表也是一次有效确认，下次直接用它，不必重推
+            store.termKey = termKeyNow
+            // 只要这次拿到的是空表，就记下「这个学期还没排课」—— 包括第一次用、盘上本来就没课表的情况，
+            // 否则每次启动都要为同一个空学期完整登录一次。拿到课时 TimetableStore.save() 会把这个记号清掉。
+            if (tt.courses.isEmpty()) {
+                store.emptyTermKey = termKeyNow
+                store.emptyCheckedAt = System.currentTimeMillis()
+            }
             store.markSync(true)
             if (!wrote) Result.EmptyTerm else Result.Updated
         } catch (e: JwglxtException) {

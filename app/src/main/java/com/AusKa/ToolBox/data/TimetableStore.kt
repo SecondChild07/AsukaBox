@@ -73,6 +73,21 @@ class TimetableStore private constructor(context: Context) {
         get() = prefs.getLong(KEY_ATTEMPT, 0L)
         private set(value) = prefs.edit().putLong(KEY_ATTEMPT, value).apply()
 
+    /**
+     * 已经确认过「这个学期还没排课」的学期，格式同 [termKey]。
+     *
+     * 开学前一两周教务里那个学期就是空的：什么都不记的话，每过半小时就为它完整登录一次，
+     * 白白烧掉学校的登录配额 —— 正方对频繁登录会互踢，甚至按连续失败锁号。
+     */
+    var emptyTermKey: String
+        get() = prefs.getString(KEY_EMPTY_TERM, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_EMPTY_TERM, value).apply()
+
+    /** 上面那次确认的时间戳，静默同步用它决定隔多久再探一次 */
+    var emptyCheckedAt: Long
+        get() = prefs.getLong(KEY_EMPTY_AT, 0L)
+        set(value) = prefs.edit().putLong(KEY_EMPTY_AT, value).apply()
+
     /** 连续失败次数，用来做指数退避；成功一次清零。 */
     var failCount: Int
         get() = prefs.getInt(KEY_FAILS, 0)
@@ -131,14 +146,24 @@ class TimetableStore private constructor(context: Context) {
         } else {
             t
         }
-        prefs.edit().putString(KEY_TABLE, SecretBox.seal(toJson(normalized).toString())).apply()
+        prefs.edit()
+            .putString(KEY_TABLE, SecretBox.seal(toJson(normalized).toString()))
+            // 盘上有课表了，之前「这个学期还没排课」的记号就该作废（否则静默同步会一直以为它是空的）
+            .remove(KEY_EMPTY_TERM)
+            .remove(KEY_EMPTY_AT)
+            .apply()
         _timetable.value = normalized
         CourseWidgetProvider.refreshAll(appContext)
         return true
     }
 
     fun clear() {
-        prefs.edit().remove(KEY_TABLE).apply()
+        prefs.edit()
+            .remove(KEY_TABLE)
+            // 课表被清掉了，「这个学期没排课」的判断也就不成立了，否则 4 小时内静默同步不会去拉
+            .remove(KEY_EMPTY_TERM)
+            .remove(KEY_EMPTY_AT)
+            .apply()
         _timetable.value = null
         CourseWidgetProvider.refreshAll(appContext)
     }
@@ -161,6 +186,8 @@ class TimetableStore private constructor(context: Context) {
             .remove(KEY_SYNC_OK)
             .remove(KEY_ATTEMPT)
             .remove(KEY_FAILS)
+            .remove(KEY_EMPTY_TERM)
+            .remove(KEY_EMPTY_AT)
             .apply()
         _timetable.value = null
         _syncOk.value = null
@@ -320,5 +347,7 @@ class TimetableStore private constructor(context: Context) {
         private const val KEY_SESSION = "jw_session"
         private const val KEY_ATTEMPT = "sync_attempt_at"
         private const val KEY_FAILS = "sync_fails"
+        private const val KEY_EMPTY_TERM = "tt_empty_term"
+        private const val KEY_EMPTY_AT = "tt_empty_at"
     }
 }

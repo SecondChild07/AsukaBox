@@ -24,6 +24,20 @@ object TermCalendar {
         return mondayOf(c)
     }
 
+    /**
+     * 一份新课表该用哪个开学日期。
+     *
+     * 只有「同一个学期」才沿用已有的那份 —— 它可能是用户手动校准过的，不能冲掉；
+     * 换学期时如果也照抄，上学期的开学日就继承到新学期，第 N 周一路顶到 maxWeek，
+     * 界面永远停在最后一周。第 30 条修「别冲掉校准」时漏了「是不是同一个学期」这层判断。
+     */
+    fun startDateFor(next: Timetable, prev: Timetable?): String {
+        if (prev != null && prev.year == next.year && prev.term == next.term && prev.startDate.isNotBlank()) {
+            return prev.startDate
+        }
+        return format(estimateStart(next.year, next.term))
+    }
+
     /** 把任意日期归到那一周的周一（周一为一周之首，和课表对得上） */
     fun mondayOf(day: Calendar): Calendar {
         val c = day.clone() as Calendar

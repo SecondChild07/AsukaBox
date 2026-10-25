@@ -145,9 +145,8 @@ fun ImportDialog(
                         store.termKey = "$year-$term"
                         // 会话存下来给静默同步复用
                         s.sessionCookie?.let { store.sessionCookie = it }
-                        store.markSync(true)
                         loading = false
-                        // 落盘和 startDate 兜底统一交给 onImported，这里不再重复 save
+                        // 落盘、startDate 兜底、同步时间统一交给 onImported 决定（空表不该报「刚刚更新」）
                         onImported(tt)
                     }
                 }

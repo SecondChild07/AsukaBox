@@ -132,13 +132,10 @@ fun TimetableScreen(
             store = store,
             onDismiss = { showImport = false },
             onImported = { tt ->
-                    // 落盘只在这一个地方。开学日期优先沿用已有的 ——
-                    // 服务端 startDate 永远为空，无条件重估会把用户校准过的第 N 周冲掉
-                    val keepDate = store.load()?.startDate?.takeIf { it.isNotBlank() }
-                        ?: TermCalendar.format(TermCalendar.estimateStart(tt.year, tt.term))
-                    val fixed = tt.copy(startDate = keepDate)
-                    store.save(fixed)
-                store.markSync(true)
+                // 落盘只在这一个地方。开学日期同一学期才沿用 —— 服务端 startDate 永远为空，
+                // 无条件重估会冲掉用户校准过的第 N 周；而换学期时照抄旧日期，当前周会直接顶到末尾
+                val fixed = tt.copy(startDate = TermCalendar.startDateFor(tt, store.load()))
+                if (store.save(fixed)) store.markSync(true)
                 week = weekOf(fixed)
                 showImport = false
             },
