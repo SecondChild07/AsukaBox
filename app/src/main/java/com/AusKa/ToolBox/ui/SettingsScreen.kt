@@ -96,7 +96,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     trailingArrow = true,
                 )
                 GlassDivider()
-                // 地图搜索：不填就只能搜内置的 188 条城市/地标
+                // 地图搜索：不填就只能搜内置的 382 条城市/地标
                 GlassRow(
                     title = "高德 Key",
                     subtitle = if (amapKey.isBlank())
@@ -195,7 +195,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "留空表示不用联网搜索，地图里只能搜内置的 188 条城市/地标。",
+                        "留空表示不用联网搜索，地图里只能搜内置的 382 条城市/地标。",
                         fontSize = 12.sp,
                         color = palette.textTertiary,
                     )
