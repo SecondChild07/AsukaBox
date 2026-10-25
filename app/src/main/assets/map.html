@@ -1003,7 +1003,38 @@ svg.leaflet-image-layer.leaflet-interactive path {
     qEl.blur();
   });
 
-  qEl.addEventListener('input', function () { renderResults(qEl.value); });
+  // ---- 联网搜索（需要用户在设置里填高德 Key）----
+  var searchSeq = 0;
+  var searchTimer = null;
+
+  window.__onSearchResult = function (json) {
+    var list = [];
+    try { list = JSON.parse(json || '[]'); } catch (e) { list = []; }
+    if (!list.length) { renderResults(qEl.value); return; }   // 原生没结果 → 退回内置库
+    var buf = '';
+    for (var i = 0; i < list.length; i++) {
+      buf += '<div class="item" data-la="' + list[i].lat + '" data-lo="' + list[i].lng + '">'
+           + list[i].n + '<span class="sub">' + (list[i].d || '') + '</span></div>';
+    }
+    boxEl.className = 'results on';
+    boxEl.innerHTML = buf;
+  };
+
+  function askNative(kw) {
+    if (!(window.Android && window.Android.searchPoi)) return false;
+    try { window.Android.searchPoi(kw); return true; } catch (e) { return false; }
+  }
+
+  function onInput() {
+    var kw = (qEl.value || '').trim();
+    // 内置库先给个即时结果，同时问原生要更全的 POI
+    renderResults(kw);
+    if (kw.length < 2) return;
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () { askNative(kw); }, 320);
+  }
+
+  qEl.addEventListener('input', onInput);
   qEl.addEventListener('focus', function () { if (qEl.value) renderResults(qEl.value); });
   qEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); qEl.blur(); } });
 </script>

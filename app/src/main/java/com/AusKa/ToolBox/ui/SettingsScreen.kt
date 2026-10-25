@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.AusKa.ToolBox.BuildConfig
+import com.AusKa.ToolBox.data.AmapKeyStore
 import com.AusKa.ToolBox.data.Author
 import com.AusKa.ToolBox.data.TimetableStore
 import com.AusKa.ToolBox.data.UrlStore
@@ -46,6 +49,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val ttStore = remember { TimetableStore.get(app) }
     var autoCheckin by remember { mutableStateOf(urlStore.autoCheckin) }
     var confirmWipe by remember { mutableStateOf(false) }
+    var amapKey by remember { mutableStateOf(AmapKeyStore.get(app)) }
+    var editKey by remember { mutableStateOf(false) }
+    var keyDraft by remember { mutableStateOf("") }
     val hasAccount = ttStore.hasAccount
 
     Column(
@@ -87,6 +93,18 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     title = "放到桌面",
                     subtitle = "把今天要上的课做成一张小卡片，添到桌面",
                     onClick = { requestWidgetPin(context) },
+                    trailingArrow = true,
+                )
+                GlassDivider()
+                // 地图搜索：不填就只能搜内置的 188 条城市/地标
+                GlassRow(
+                    title = "高德 Key",
+                    subtitle = if (amapKey.isBlank())
+                        "填了才能在地图上搜任意地点（开放平台免费申请，选「Web服务」）"
+                    else
+                        "已配置 · 地图搜索可以搜到具体地点",
+                    value = if (amapKey.isBlank()) "未填" else "已填",
+                    onClick = { keyDraft = amapKey; editKey = true },
                     trailingArrow = true,
                 )
                 GlassDivider()
@@ -153,6 +171,45 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             },
             dismissButton = {
                 TextButton(onClick = { confirmWipe = false }) { Text("取消") }
+            },
+        )
+    }
+
+    if (editKey) {
+        AlertDialog(
+            onDismissRequest = { editKey = false },
+            title = { Text("高德 Key") },
+            text = {
+                Column {
+                    Text(
+                        "在 lbs.amap.com 控制台创建应用 → 添加 Key → 服务平台选「Web服务」，把那串 key 粘进来。",
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = keyDraft,
+                        onValueChange = { keyDraft = it },
+                        singleLine = true,
+                        placeholder = { Text("例如 a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "留空表示不用联网搜索，地图里只能搜内置的 188 条城市/地标。",
+                        fontSize = 12.sp,
+                        color = palette.textTertiary,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    AmapKeyStore.set(app, keyDraft)
+                    amapKey = keyDraft.trim()
+                    editKey = false
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editKey = false }) { Text("取消") }
             },
         )
     }

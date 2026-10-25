@@ -50,7 +50,7 @@ android {
         applicationId = "com.AusKa.ToolBox"
         minSdk = 24
         targetSdk = 37
-        versionCode = 111
+        versionCode = 112
         versionName = "1.0"
 
         // 空字符串 = 未配置签名，运行时跳过签名校验
@@ -126,6 +126,8 @@ android {
 }
 
 dependencies {
+    // 单测里用真实 org.json 实现（android.jar 里的是 stub，调用会抛 "not mocked"）
+    testImplementation("org.json:json:20240303")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.foundation)

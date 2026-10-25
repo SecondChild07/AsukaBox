@@ -32,7 +32,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.AusKa.ToolBox.glass.GlassButton
 import com.AusKa.ToolBox.glass.GlassButtonKind
 import com.AusKa.ToolBox.glass.LocalGlassPalette
+import com.AusKa.ToolBox.data.AmapKeyStore
 import com.AusKa.ToolBox.location.CoordinateConverter
+import com.AusKa.ToolBox.net.AmapSearch
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * 全屏选点地图（不是 Dialog —— WebView 放在 Dialog 窗口里会渲染不出瓦片，只能拿到逻辑层的回调）。
@@ -48,6 +51,10 @@ fun MapPickerScreen(
     onBack: () -> Unit,
 ) {
     val palette = LocalGlassPalette.current
+    val ctx = LocalContext.current
+    // 进页面时读一次；在设置里改完 key 再回来会重新读
+    val amapKey = remember { AmapKeyStore.get(ctx) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var picked by remember { mutableStateOf(latitude to longitude) }
 
     val gcjStart = remember(latitude, longitude) {
@@ -133,7 +140,22 @@ fun MapPickerScreen(
                                 )
                             }
                         }
-                        addJavascriptInterface(Bridge { la, lo -> picked = la to lo }, "Android")
+                        webViewRef = this
+                        addJavascriptInterface(
+                            Bridge(
+                                keyProvider = { amapKey },
+                                onPick = { la, lo -> picked = la to lo },
+                                onResult = { json ->
+                                    post {
+                                        evaluateJavascript(
+                                            "window.__onSearchResult($json);",
+                                            null,
+                                        )
+                                    }
+                                },
+                            ),
+                            "Android",
+                        )
                         loadUrl("file:///android_asset/map.html")
                     }
                 },
@@ -177,12 +199,37 @@ fun MapPickerScreen(
     }
 }
 
-/** WebView 与 JS 之间的桥：地图点击后回调到这里 */
-private class Bridge(private val onPick: (Double, Double) -> Unit) {
+/**
+ * WebView 与 JS 之间的桥。
+ *
+ * - onPick：地图上点选 / 拖动标记后回传 GCJ-02 坐标
+ * - searchPoi：在 WebView 里搜不出结果时，交给原生去调高德输入提示（避开 file:// 的跨域限制）
+ *
+ * 注意：@JavascriptInterface 的方法都在 WebView 的 JavaBridge 线程上执行，不能直接碰 View/Compose 状态，
+ * 所以这里自己起线程，回调也自己切主线程。
+ */
+private class Bridge(
+    private val keyProvider: () -> String,
+    private val onPick: (Double, Double) -> Unit,
+    private val onResult: (String) -> Unit,
+) {
     @JavascriptInterface
     fun onPick(lat: String, lng: String) {
         val la = lat.toDoubleOrNull() ?: return
         val lo = lng.toDoubleOrNull() ?: return
         onPick(la, lo)
+    }
+
+    @JavascriptInterface
+    fun searchPoi(keyword: String) {
+        val key = keyProvider()
+        if (key.isBlank()) {
+            onResult("[]")
+            return
+        }
+        Thread {
+            val json = runCatching { AmapSearch.searchJson(key, keyword) }.getOrDefault("[]")
+            onResult(json)
+        }.apply { isDaemon = true }.start()
     }
 }
