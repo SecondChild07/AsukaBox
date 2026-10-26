@@ -20,6 +20,10 @@ internal object ChaoxingStore {
     private const val K_AI_KEY = "ai_key"
     private const val K_AI_MODEL = "ai_model"
     private const val K_AI_BASE = "ai_base"
+    // 图片题（听力作业把题面做成图）单独一套配置，可以和第二套指向不同服务商
+    private const val K_V_KEY = "ai_v_key"
+    private const val K_V_MODEL = "ai_v_model"
+    private const val K_V_BASE = "ai_v_base"
     private const val K_SUBMIT = "submit_mode"
     private const val K_TASKS = "tasks_json"
     private const val K_TASKS_AT = "tasks_at"
@@ -92,6 +96,41 @@ internal object ChaoxingStore {
         val b = value.trim()
         val e = prefs(context).edit()
         if (b.isEmpty()) e.remove(K_AI_BASE) else e.putString(K_AI_BASE, b)
+        e.apply()
+    }
+
+    // ---------------------------------------------------------------- 图片题用的那套
+
+    fun visionKey(context: Context): String {
+        val sealed = prefs(context).getString(K_V_KEY, "").orEmpty()
+        if (sealed.isEmpty()) return ""
+        return SecretBox.open(sealed)
+    }
+
+    fun setVisionKey(context: Context, value: String) {
+        val k = value.trim()
+        val e = prefs(context).edit()
+        if (k.isEmpty()) e.remove(K_V_KEY) else e.putString(K_V_KEY, SecretBox.seal(k))
+        e.apply()
+    }
+
+    fun visionModel(context: Context): String =
+        prefs(context).getString(K_V_MODEL, "").orEmpty()
+
+    fun setVisionModel(context: Context, value: String) {
+        val m = value.trim()
+        val e = prefs(context).edit()
+        if (m.isEmpty()) e.remove(K_V_MODEL) else e.putString(K_V_MODEL, m)
+        e.apply()
+    }
+
+    fun visionBase(context: Context): String =
+        prefs(context).getString(K_V_BASE, "").orEmpty()
+
+    fun setVisionBase(context: Context, value: String) {
+        val b = value.trim()
+        val e = prefs(context).edit()
+        if (b.isEmpty()) e.remove(K_V_BASE) else e.putString(K_V_BASE, b)
         e.apply()
     }
 

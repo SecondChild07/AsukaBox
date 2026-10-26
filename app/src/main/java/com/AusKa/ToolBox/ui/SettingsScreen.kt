@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.AusKa.ToolBox.BuildConfig
+import com.AusKa.ToolBox.chaoxing.AiPreset
 import com.AusKa.ToolBox.chaoxing.AiPresets
 import com.AusKa.ToolBox.data.AmapKeyStore
 import com.AusKa.ToolBox.data.ChaoxingStore
@@ -35,6 +36,7 @@ import com.AusKa.ToolBox.data.Author
 import com.AusKa.ToolBox.data.TimetableStore
 import com.AusKa.ToolBox.data.UrlStore
 import com.AusKa.ToolBox.glass.LiquidGlass
+import com.AusKa.ToolBox.glass.GlassPalette
 import com.AusKa.ToolBox.glass.LocalGlassPalette
 
 /**
@@ -63,6 +65,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var aiDraft by remember { mutableStateOf("") }
     var modelDraft by remember { mutableStateOf("") }
     var baseDraft by remember { mutableStateOf("") }
+    // 图片题（听力作业的题面是图）单独一套
+    var aiVisionKey by remember { mutableStateOf(ChaoxingStore.visionKey(app)) }
+    var aiVisionModel by remember { mutableStateOf(ChaoxingStore.visionModel(app)) }
+    var aiVisionBase by remember { mutableStateOf(ChaoxingStore.visionBase(app)) }
+    var visionDraft by remember { mutableStateOf("") }
+    var visionModelDraft by remember { mutableStateOf("") }
+    var visionBaseDraft by remember { mutableStateOf("") }
     val hasAccount = ttStore.hasAccount
 
     Column(
@@ -223,69 +232,57 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { editAi = false },
             title = { Text("AI 答题设置") },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text(
                         "Key 只存在这台手机上（Keystore 加密），不会经过任何第三方服务器；答题时由 App 直接请求你填的服务商。",
                         fontSize = 13.sp,
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "内置接口（点一下自动填好地址和模型，Key 仍要自己去申请）",
-                        fontSize = 12.sp,
-                        color = palette.textTertiary,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Column(modifier = Modifier.height(150.dp).verticalScroll(rememberScrollState())) {
-                        AiPresets.all.forEach { p ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        baseDraft = p.base
-                                        modelDraft = p.model
-                                    }
-                                    .padding(vertical = 6.dp),
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(p.name, fontSize = 13.sp)
-                                    Text(p.note, fontSize = 11.sp, color = palette.textTertiary)
-                                }
-                                Text(
-                                    if (p.vision) "可读图" else "纯文本",
-                                    fontSize = 11.sp,
-                                    color = if (p.vision) palette.success else palette.textTertiary,
-                                )
-                            }
-                        }
+
+                    Spacer(Modifier.height(12.dp))
+                    AiSectionTitle("文字题模型", "选择、填空、判断、简答这些纯文字题用这套", palette)
+                    Spacer(Modifier.height(6.dp))
+                    AiPresetList(AiPresets.all, palette) { p ->
+                        baseDraft = p.base
+                        modelDraft = p.model
                     }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = aiDraft,
-                        onValueChange = { aiDraft = it },
-                        singleLine = true,
-                        placeholder = { Text(if (aiKey.isBlank()) "sk-…" else "留空表示不改动已存的 Key") },
-                        modifier = Modifier.fillMaxWidth(),
+                    Spacer(Modifier.height(6.dp))
+                    AiKeyFields(
+                        keyValue = aiDraft,
+                        onKey = { aiDraft = it },
+                        keyHint = if (aiKey.isBlank()) "sk-…" else "留空表示不改动已存的 Key",
+                        modelValue = modelDraft,
+                        onModel = { modelDraft = it },
+                        baseValue = baseDraft,
+                        onBase = { baseDraft = it },
                     )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = modelDraft,
-                        onValueChange = { modelDraft = it },
-                        singleLine = true,
-                        placeholder = { Text("模型名，例如 gpt-4o-mini") },
-                        modifier = Modifier.fillMaxWidth(),
+
+                    Spacer(Modifier.height(14.dp))
+                    AiSectionTitle(
+                        "图片题模型（视觉）",
+                        "听力作业的题面是图片，要用能看图的服务商；留空就沿用上面那套",
+                        palette,
                     )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = baseDraft,
-                        onValueChange = { baseDraft = it },
-                        singleLine = true,
-                        placeholder = { Text("接口地址，留空就是 OpenAI 官方") },
-                        modifier = Modifier.fillMaxWidth(),
+                    Spacer(Modifier.height(6.dp))
+                    AiPresetList(AiPresets.all.filter { it.vision }, palette) { p ->
+                        visionBaseDraft = p.base
+                        visionModelDraft = p.model
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    AiKeyFields(
+                        keyValue = visionDraft,
+                        onKey = { visionDraft = it },
+                        keyHint = if (aiVisionKey.isBlank()) "留空就沿用文字题那套 Key" else "留空表示不改动已存的 Key",
+                        modelValue = visionModelDraft,
+                        onModel = { visionModelDraft = it },
+                        modelHint = "例如 glm-4v-flash / gemini-2.0-flash",
+                        baseValue = visionBaseDraft,
+                        onBase = { visionBaseDraft = it },
                     )
+
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "模型名留空就用 gpt-4o-mini；接口地址填到 /v1 为止。" +
-                            "听力作业的题面是图片，只有带视觉的模型才能做，纯文本模型会提示「该 API 无识图能力」。",
+                            "纯文本模型做图片题会提示「该 API 无识图能力」，文字题不受影响。",
                         fontSize = 12.sp,
                         color = palette.textTertiary,
                     )
@@ -303,13 +300,26 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     aiModel = m
                     ChaoxingStore.setAiBase(app, baseDraft.trim())
                     aiBase = baseDraft.trim()
+
+                    val vk = visionDraft.trim()
+                    if (vk.isNotEmpty()) {
+                        ChaoxingStore.setVisionKey(app, vk)
+                        aiVisionKey = vk
+                    }
+                    val vm = visionModelDraft.trim()
+                    ChaoxingStore.setVisionModel(app, vm)
+                    aiVisionModel = vm
+                    ChaoxingStore.setVisionBase(app, visionBaseDraft.trim())
+                    aiVisionBase = visionBaseDraft.trim()
                     editAi = false
                 }) { Text("保存") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     ChaoxingStore.setAiKey(app, "")
+                    ChaoxingStore.setVisionKey(app, "")
                     aiKey = ""
+                    aiVisionKey = ""
                     editAi = false
                 }) { Text("清空 Key") }
             },
@@ -355,6 +365,83 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             dismissButton = {
                 TextButton(onClick = { editKey = false }) { Text("取消") }
             },
+        )
+    }
+}
+
+/** 一组设置的小标题：主标题 + 一句解释 */
+@Composable
+private fun AiSectionTitle(title: String, hint: String, palette: GlassPalette) {
+    Column {
+        Text(title, fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+        Text(hint, fontSize = 11.sp, color = palette.textTertiary)
+    }
+}
+
+/** 内置服务商列表：点一行就把地址和模型填进当前这套配置 */
+@Composable
+private fun AiPresetList(
+    presets: List<AiPreset>,
+    palette: GlassPalette,
+    onPick: (AiPreset) -> Unit,
+) {
+    Column(modifier = Modifier.height(138.dp).verticalScroll(rememberScrollState())) {
+        presets.forEach { p ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(p) }
+                    .padding(vertical = 5.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(p.name, fontSize = 13.sp)
+                    Text(p.note, fontSize = 11.sp, color = palette.textTertiary)
+                }
+                Text(
+                    if (p.vision) "可读图" else "纯文本",
+                    fontSize = 11.sp,
+                    color = if (p.vision) palette.success else palette.textTertiary,
+                )
+            }
+        }
+    }
+}
+
+/** Key / 模型名 / 接口地址三个输入框 */
+@Composable
+private fun AiKeyFields(
+    keyValue: String,
+    onKey: (String) -> Unit,
+    keyHint: String,
+    modelValue: String,
+    onModel: (String) -> Unit,
+    baseValue: String,
+    onBase: (String) -> Unit,
+    modelHint: String = "例如 deepseek-chat / gpt-4o-mini",
+) {
+    Column {
+        OutlinedTextField(
+            value = keyValue,
+            onValueChange = onKey,
+            singleLine = true,
+            placeholder = { Text(keyHint) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
+        OutlinedTextField(
+            value = modelValue,
+            onValueChange = onModel,
+            singleLine = true,
+            placeholder = { Text(modelHint) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
+        OutlinedTextField(
+            value = baseValue,
+            onValueChange = onBase,
+            singleLine = true,
+            placeholder = { Text("接口地址，填到 /v1 为止") },
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

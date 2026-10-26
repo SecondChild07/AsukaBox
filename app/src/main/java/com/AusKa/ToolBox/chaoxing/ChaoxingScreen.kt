@@ -157,6 +157,36 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         manager.flush()
     }
 
+    /**
+     * 退出学习通登录。
+     *
+     * 三件事一起做：清 WebView 的 cookie（不然网页里还是登录态）、清本机存的会话快照、
+     * 清掉上一次扫出来的清单（那是上一个人的作业，留着容易看错）。
+     */
+    fun logout() {
+        CookieManager.getInstance().apply {
+            removeAllCookies(null)
+            flush()
+        }
+        ChaoxingStore.clearSession(context)
+        ChaoxingStore.setTasksJson(context, "")
+        snapshot = ""
+        savedAt = 0L
+        tasks = emptyList()
+        scanned = emptyList()
+        courses = emptyList()
+        cursor = 0
+        scanning = false
+        stage = SCAN_IDLE
+        progress = ""
+        autoScanTried = false
+        autoSolved = emptySet()
+        setupOpen = false
+        scanNote = "已退出登录，下次进来重新登一次"
+        page = PAGE_HOME
+        urlText = ChaoxingScripts.LOGIN_URL
+    }
+
     fun runProbe() {
         webView.evaluateJavascript(ChaoxingScripts.PROBE) { raw ->
             val json = unquote(raw)
@@ -263,6 +293,10 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         }
         val apiBase = ChaoxingStore.aiBase(context).ifBlank { AiClient.DEFAULT_BASE }
         val model = ChaoxingStore.aiModel(context).ifBlank { AiClient.DEFAULT_MODEL }
+        // 图片题单独一套：没单独填就沿用文字那套（能用就用，不能用会由服务端报错再提示）
+        val vKey = ChaoxingStore.visionKey(context).ifBlank { key }
+        val vBase = ChaoxingStore.visionBase(context).ifBlank { apiBase }
+        val vModel = ChaoxingStore.visionModel(context).ifBlank { model }
         solving = true
         solveNote = "读取题目…"
         webView.evaluateJavascript(QuizScripts.QUESTIONS) { raw ->
@@ -359,7 +393,9 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     if (stats[0] > 0) scanNote = "AI 已填 " + stats[0] + " 题（未提交）"
                 } else {
                     val q = list[at]
-                    solveNote = "第 " + (at + 1) + "/" + list.size + " 题 · " + kindLabel(q.kind)
+                    val picQuestion = q.images.isNotEmpty() && q.inputs > 0
+                    solveNote = "第 " + (at + 1) + "/" + list.size + " 题 · " + kindLabel(q.kind) +
+                        (if (picQuestion) " · 走视觉模型" else "")
                     // webView.url 只能在主线程读 —— 放到后台线程里会直接崩（已实测踩到）
                     val pageUrl = webView.url.orEmpty()
                     Thread {
@@ -368,11 +404,11 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         val hasAudio = q.audio.isNotBlank() || q.kind == "listening"
                         val heard = if (hasAudio) transcribeAudio(q.audio, pageUrl, apiBase, key) else ""
                         // 题面是图片的（Section A/B 那种）走视觉：一次问整块，按空位顺序填字母
-                        if (q.images.isNotEmpty() && q.inputs > 0) {
+                        if (picQuestion) {
                             val reply = AiClient.chatImages(
-                                apiBase,
-                                key,
-                                model,
+                                vBase,
+                                vKey,
+                                vModel,
                                 QuizPrompt.vision(courseContext(), q.inputs, heard, q.stem),
                                 q.images,
                             )
@@ -760,6 +796,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         submitMode = mode
                         ChaoxingStore.setSubmitMode(context, mode)
                     },
+                    onLogout = { logout() },
                 )
             } else {
                 WebPane(
@@ -842,6 +879,7 @@ private fun HomePane(
     onSaveKey: () -> Unit,
     onClearKey: () -> Unit,
     onModeChange: (String) -> Unit,
+    onLogout: () -> Unit,
 ) {
     // 0 = 未完成，1 = 已完成。只做展示，扫描在后台跑。
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -964,6 +1002,16 @@ private fun HomePane(
                                 "登录走网页，App 不存账密"
                             }
                         )
+                        if (signedIn) {
+                            Spacer(Modifier.height(10.dp))
+                            GlassButton(
+                                text = "退出学习通登录",
+                                onClick = onLogout,
+                                modifier = Modifier.fillMaxWidth(),
+                                height = 38.dp,
+                                kind = GlassButtonKind.Ghost,
+                            )
+                        }
                     }
                 }
             }
