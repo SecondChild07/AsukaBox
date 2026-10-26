@@ -77,38 +77,32 @@ internal data class AiResult(val text: String, val error: String = "") {
  */
 internal object AiClient {
 
-    const val DEFAULT_BASE = "https://api.openai.com/v1"
-    const val DEFAULT_MODEL = "gpt-4o-mini"
+    const val DEFAULT_BASE = "https://api.deepseek.com/v1"
+    const val DEFAULT_MODEL = "deepseek-chat"
 
     private const val TIMEOUT_MS = 45_000
 
     /** 返回模型回答的正文；失败返回空串（调用方按「这题没答案」处理） */
-    fun chat(apiBase: String, key: String, model: String, prompt: String): String {
-        if (key.isBlank()) return ""
+    fun chat(apiBase: String, key: String, model: String, prompt: String): String =
+        chatResult(apiBase, key, model, prompt).text
+
+    /** 和 chat 一样，但把失败原因带回来，界面才能说清「Key 不对 / 网络不通 / 模型不存在」 */
+    fun chatResult(apiBase: String, key: String, model: String, prompt: String): AiResult {
+        if (key.isBlank()) return AiResult("", "还没填 Key")
         val body = JSONObject().apply {
             put("model", model.ifBlank { DEFAULT_MODEL })
             put("temperature", 0)
             put(
                 "messages",
                 JSONArray().apply {
-                    put(
-                        JSONObject().apply {
-                            put("role", "system")
-                            put("content", SYSTEM_PROMPT)
-                        },
-                    )
-                    put(
-                        JSONObject().apply {
-                            put("role", "user")
-                            put("content", prompt)
-                        },
-                    )
+                    put(JSONObject().apply { put("role", "system"); put("content", SYSTEM_PROMPT) })
+                    put(JSONObject().apply { put("role", "user"); put("content", prompt) })
                 },
             )
         }.toString()
         val url = apiBase.trimEnd('/') + "/chat/completions"
         val payload = body.toByteArray(Charsets.UTF_8)
-        var raw = post(url, key, payload, "application/json")
+        var (raw, err) = postDetailed(url, key, payload, "application/json")
         // 429 / 5xx / 网络抖动重试一次：题量大的时候偶尔掉一两题很亏
         if (raw.isBlank()) {
             try {
@@ -116,17 +110,20 @@ internal object AiClient {
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
             }
-            raw = post(url, key, payload, "application/json")
+            val again = postDetailed(url, key, payload, "application/json")
+            raw = again.first
+            if (err.isBlank()) err = again.second
         }
-        if (raw.isBlank()) return ""
+        if (raw.isBlank()) return AiResult("", err.ifBlank { "请求失败" })
         return try {
             val obj = JSONObject(raw)
-            val choices = obj.optJSONArray("choices") ?: return ""
-            val first = choices.optJSONObject(0) ?: return ""
-            val message = first.optJSONObject("message") ?: return ""
-            message.optString("content", "")
+            val choices = obj.optJSONArray("choices") ?: return AiResult("", "响应里没有 choices：" + raw.take(160))
+            val first = choices.optJSONObject(0) ?: return AiResult("", "choices 是空的")
+            val message = first.optJSONObject("message") ?: return AiResult("", "响应里没有 message")
+            val content = message.optString("content", "")
+            if (content.isBlank()) AiResult("", "模型返回了空内容") else AiResult(content, "")
         } catch (e: Exception) {
-            ""
+            AiResult("", "解析响应失败：" + (e.message ?: ""))
         }
     }
 

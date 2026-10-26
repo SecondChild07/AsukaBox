@@ -291,8 +291,11 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             solveNote = "先去「设置 → AI Key」填一条 key"
             return
         }
-        val apiBase = ChaoxingStore.aiBase(context).ifBlank { AiClient.DEFAULT_BASE }
         val model = ChaoxingStore.aiModel(context).ifBlank { AiClient.DEFAULT_MODEL }
+        // 地址优先用用户填的；没填就按模型名推（deepseek-chat → api.deepseek.com/v1 这种）
+        val apiBase = ChaoxingStore.aiBase(context).ifBlank {
+            AiEndpoints.baseFor(model) ?: AiClient.DEFAULT_BASE
+        }
         // 现在只有一套模型。用户可能填的是纯文本模型，那就跳过看图的题，别硬问
         val canSeeImage = AiSupport.looksVisionModel(model)
         solving = true
@@ -307,6 +310,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             val stats = intArrayOf(0, 0, list.size)
             // 因「模型不识字图」被跳过的题数
             var skipped = 0
+            // 所有线程共用：记下前几条失败原因，结束时直接显示，避免「0 题」但看不出为什么
+            val errors = java.util.Collections.synchronizedList(mutableListOf<String>())
             val hasAudio = list.any { it.audio.isNotBlank() || it.kind == "listening" }
             if (hasAudio) {
                 // 听力题先把播放倍速拨到 2 倍，帮用户省一半时间（页面允许的话）
@@ -387,9 +392,11 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             stepRef = { at ->
                 if (at >= list.size) {
                     solving = false
+                    val firstError = synchronized(errors) { errors.firstOrNull().orEmpty() }
                     solveNote = "填了 " + stats[0] + "/" + stats[2] + " 题" +
                         (if (stats[1] > 0) "，有 " + stats[1] + " 题没拿到答案" else "") +
                         (if (skipped > 0) "，跳过 " + skipped + " 道看图题（当前模型不能识图）" else "") +
+                        (if (stats[0] == 0 && firstError.isNotEmpty()) "。原因：" + AiSupport.friendly(firstError) else "") +
                         " · 没提交，自己看一眼再点提交"
                     if (stats[0] > 0) scanNote = "AI 已填 " + stats[0] + " 题（未提交）"
                 } else {
@@ -426,6 +433,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 webView.post { applyLetters(q, values, 0, at) }
                                 return@Thread
                             }
+                            if (!reply.ok) synchronized(errors) { if (errors.size < 3) errors.add(reply.error) }
                             if (!reply.ok && AiSupport.meansNoVision(reply.error)) {
                                 // 模型名看着像视觉模型、实际服务端不认 —— 同样跳过，别把题空着乱填
                                 webView.post {
@@ -436,9 +444,14 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 return@Thread
                             }
                         }
-                        val ans = AiParse.answer(
-                            AiClient.chat(apiBase, key, model, QuizPrompt.user(q, courseContext(), heard)),
+                        val reply = AiClient.chatResult(
+                            apiBase,
+                            key,
+                            model,
+                            QuizPrompt.user(q, courseContext(), heard),
                         )
+                        if (!reply.ok) synchronized(errors) { if (errors.size < 3) errors.add(reply.error) }
+                        val ans = AiParse.answer(reply.text)
                         webView.post { applyAt(q, ans, at) }
                         }.start()
                     }

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.AusKa.ToolBox.BuildConfig
 import com.AusKa.ToolBox.data.AmapKeyStore
 import com.AusKa.ToolBox.data.Author
+import com.AusKa.ToolBox.chaoxing.AiEndpoints
 import com.AusKa.ToolBox.data.ChaoxingStore
 import com.AusKa.ToolBox.data.TimetableStore
 import com.AusKa.ToolBox.data.UrlStore
@@ -227,11 +228,30 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         onKey = { aiDraft = it },
                         keyHint = if (aiKey.isBlank()) "sk-…" else "留空表示不改动已存的 Key",
                         modelValue = modelDraft,
-                        onModel = { modelDraft = it },
+                        onModel = {
+                            modelDraft = it
+                            // 模型名一改就顺手把地址填好（用户自己改过的不覆盖）
+                            AiEndpoints.baseFor(it)?.let { b ->
+                                if (baseDraft.isBlank() || AiEndpoints.baseFor(modelDraft) != null) {
+                                    baseDraft = b
+                                }
+                            }
+                        },
                         baseValue = baseDraft,
                         onBase = { baseDraft = it },
                         advanced = showAdvanced,
                     )
+
+                    if (showAdvanced) {
+                        AiEndpoints.hintFor(modelDraft)?.let { hint ->
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                hint + " · 地址已按模型名填好，改成中转站也行",
+                                fontSize = 11.sp,
+                                color = palette.success,
+                            )
+                        }
+                    }
 
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -239,8 +259,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             "带视觉能力（glm-4v / gemini / gpt-4o 这类）才能做听力图片题；" +
                                 "纯文本模型（deepseek-chat 等）遇到看图题会跳过，并提示你换模型。"
                         } else {
-                            "默认用 OpenAI 官方的 gpt-4o-mini。要换成 DeepSeek、Gemini 这些，" +
-                                "点上面的「高级」。"
+                            "默认用 DeepSeek 的 deepseek-chat。要换 Kimi、通义、智谱这些，" +
+                                "点上面的「高级」，模型名一填地址就自动配好。"
                         },
                         fontSize = 12.sp,
                         color = palette.textTertiary,

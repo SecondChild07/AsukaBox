@@ -2,6 +2,7 @@ package com.AusKa.ToolBox
 
 import com.AusKa.ToolBox.chaoxing.AiSupport
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,4 +41,13 @@ class AiSupportTest {
         assertFalse(AiSupport.meansNoVision("HTTP 500 internal error"))
         assertFalse(AiSupport.meansNoVision(""))
     }
+    @Test
+    fun friendlyTranslatesCommonFailures() {
+        assertEquals("Key 不对或已失效", AiSupport.friendly("HTTP 401 {\"error\":\"invalid api key\"}"))
+        assertEquals("接口地址或模型名不对", AiSupport.friendly("HTTP 404 model_not_found"))
+        assertEquals("接口超时，检查网络", AiSupport.friendly("java.net.SocketTimeoutException: timeout"))
+        assertEquals("连不上接口，检查地址和网络", AiSupport.friendly("IOException unexpected end of stream"))
+        assertTrue(AiSupport.friendly("HTTP 500 something odd").contains("500"))
+    }
+
 }
