@@ -32,8 +32,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.AusKa.ToolBox.BuildConfig
-import com.AusKa.ToolBox.chaoxing.AiProvider
-import com.AusKa.ToolBox.chaoxing.AiProviders
 import com.AusKa.ToolBox.data.AmapKeyStore
 import com.AusKa.ToolBox.data.Author
 import com.AusKa.ToolBox.data.ChaoxingStore
@@ -69,6 +67,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var aiDraft by remember { mutableStateOf("") }
     var modelDraft by remember { mutableStateOf("") }
     var baseDraft by remember { mutableStateOf("") }
+    var showAdvanced by remember { mutableStateOf(false) }
     val hasAccount = ttStore.hasAccount
 
     Column(
@@ -223,17 +222,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     )
 
                     Spacer(Modifier.height(12.dp))
-                    AiSectionTitle(
-                        "模型",
-                        "文字题和图片题共用这一个；填纯文本模型时，看图的题会被跳过并提示",
-                        palette,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    AiProviderChips(AiProviders.all, palette) { p ->
-                        baseDraft = p.base
-                        modelDraft = p.model
-                    }
-                    Spacer(Modifier.height(6.dp))
                     AiKeyFields(
                         keyValue = aiDraft,
                         onKey = { aiDraft = it },
@@ -242,16 +230,27 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         onModel = { modelDraft = it },
                         baseValue = baseDraft,
                         onBase = { baseDraft = it },
+                        advanced = showAdvanced,
                     )
 
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "模型名留空就用 gpt-4o-mini；接口地址填到 /v1 为止。" +
+                        if (showAdvanced) {
                             "带视觉能力（glm-4v / gemini / gpt-4o 这类）才能做听力图片题；" +
-                            "纯文本模型（deepseek-chat 等）遇到看图题会跳过，并提示你换模型。",
+                                "纯文本模型（deepseek-chat 等）遇到看图题会跳过，并提示你换模型。"
+                        } else {
+                            "默认用 OpenAI 官方的 gpt-4o-mini。要换成 DeepSeek、Gemini 这些，" +
+                                "点上面的「高级」。"
+                        },
                         fontSize = 12.sp,
                         color = palette.textTertiary,
                     )
+
+                    if (!showAdvanced) {
+                        TextButton(onClick = { showAdvanced = true }) {
+                            Text("高级：换接口地址和模型名", fontSize = 12.sp)
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -261,11 +260,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         ChaoxingStore.setAiKey(app, k)
                         aiKey = k
                     }
-                    val m = modelDraft.trim()
-                    ChaoxingStore.setAiModel(app, m)
-                    aiModel = m
-                    ChaoxingStore.setAiBase(app, baseDraft.trim())
-                    aiBase = baseDraft.trim()
+                    // 只有展开「高级」时才动模型名和地址，避免只改 Key 时把已存的配置清空
+                    if (showAdvanced) {
+                        val m = modelDraft.trim()
+                        ChaoxingStore.setAiModel(app, m)
+                        aiModel = m
+                        ChaoxingStore.setAiBase(app, baseDraft.trim())
+                        aiBase = baseDraft.trim()
+                    }
                     editAi = false
                 }) { Text("保存") }
             },
@@ -322,46 +324,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
 }
 
-/** 一行可横滑的服务商快捷项，点一下把地址和模型名填进当前这套配置 */
-@Composable
-private fun AiProviderChips(
-    providers: List<AiProvider>,
-    palette: GlassPalette,
-    onPick: (AiProvider) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        providers.forEach { p ->
-            Box(
-                modifier = Modifier
-                    .padding(end = 6.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(palette.fieldFill)
-                    .clickable { onPick(p) }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-            ) {
-                Text(
-                    p.name,
-                    fontSize = 11.sp,
-                    color = if (p.vision) palette.success else palette.textSecondary,
-                )
-            }
-        }
-    }
-}
-
-/** 一组设置的小标题：主标题 + 一句解释 */
-@Composable
-private fun AiSectionTitle(title: String, hint: String, palette: GlassPalette) {
-    Column {
-        Text(title, fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-        Text(hint, fontSize = 11.sp, color = palette.textTertiary)
-    }
-}
-
-/** Key / 模型名 / 接口地址三个输入框 */
+/** Key 输入框；只有展开「高级」时才露模型名和接口地址 */
 @Composable
 private fun AiKeyFields(
     keyValue: String,
@@ -371,6 +334,7 @@ private fun AiKeyFields(
     onModel: (String) -> Unit,
     baseValue: String,
     onBase: (String) -> Unit,
+    advanced: Boolean = false,
     modelHint: String = "例如 deepseek-chat / gpt-4o-mini",
 ) {
     Column {
@@ -381,6 +345,7 @@ private fun AiKeyFields(
             placeholder = { Text(keyHint) },
             modifier = Modifier.fillMaxWidth(),
         )
+        if (!advanced) return@Column
         Spacer(Modifier.height(6.dp))
         OutlinedTextField(
             value = modelValue,
