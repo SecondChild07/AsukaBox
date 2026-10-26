@@ -54,6 +54,13 @@ internal object AiPresets {
             note = "免费文本模型 · siliconflow.cn 申请 Key",
         ),
         AiPreset(
+            name = "DeepSeek",
+            base = "https://api.deepseek.com/v1",
+            model = "deepseek-chat",
+            vision = false,
+            note = "便宜文本模型 · 官方接口没有视觉，图片题会跳过",
+        ),
+        AiPreset(
             name = "OpenAI 官方",
             base = "https://api.openai.com/v1",
             model = "gpt-4o-mini",
