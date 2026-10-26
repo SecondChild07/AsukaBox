@@ -69,13 +69,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var aiDraft by remember { mutableStateOf("") }
     var modelDraft by remember { mutableStateOf("") }
     var baseDraft by remember { mutableStateOf("") }
-    // 图片题（听力作业的题面是图）单独一套
-    var aiVisionKey by remember { mutableStateOf(ChaoxingStore.visionKey(app)) }
-    var aiVisionModel by remember { mutableStateOf(ChaoxingStore.visionModel(app)) }
-    var aiVisionBase by remember { mutableStateOf(ChaoxingStore.visionBase(app)) }
-    var visionDraft by remember { mutableStateOf("") }
-    var visionModelDraft by remember { mutableStateOf("") }
-    var visionBaseDraft by remember { mutableStateOf("") }
     val hasAccount = ttStore.hasAccount
 
     Column(
@@ -230,9 +223,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     )
 
                     Spacer(Modifier.height(12.dp))
-                    AiSectionTitle("文字题模型", "选择、填空、判断、简答这些纯文字题用这套", palette)
+                    AiSectionTitle(
+                        "模型",
+                        "文字题和图片题共用这一个；填纯文本模型时，看图的题会被跳过并提示",
+                        palette,
+                    )
                     Spacer(Modifier.height(6.dp))
-                    AiProviderChips(AiProviders.text, palette) { p ->
+                    AiProviderChips(AiProviders.all, palette) { p ->
                         baseDraft = p.base
                         modelDraft = p.model
                     }
@@ -247,33 +244,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         onBase = { baseDraft = it },
                     )
 
-                    Spacer(Modifier.height(14.dp))
-                    AiSectionTitle(
-                        "图片题模型（视觉）",
-                        "听力作业的题面是图片，要用能看图的服务商；留空就沿用上面那套",
-                        palette,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    AiProviderChips(AiProviders.vision, palette) { p ->
-                        visionBaseDraft = p.base
-                        visionModelDraft = p.model
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    AiKeyFields(
-                        keyValue = visionDraft,
-                        onKey = { visionDraft = it },
-                        keyHint = if (aiVisionKey.isBlank()) "留空就沿用文字题那套 Key" else "留空表示不改动已存的 Key",
-                        modelValue = visionModelDraft,
-                        onModel = { visionModelDraft = it },
-                        modelHint = "例如 glm-4v-flash / gemini-2.0-flash",
-                        baseValue = visionBaseDraft,
-                        onBase = { visionBaseDraft = it },
-                    )
-
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "模型名留空就用 gpt-4o-mini；接口地址填到 /v1 为止。" +
-                            "纯文本模型做图片题会提示「该 API 无识图能力」，文字题不受影响。",
+                            "带视觉能力（glm-4v / gemini / gpt-4o 这类）才能做听力图片题；" +
+                            "纯文本模型（deepseek-chat 等）遇到看图题会跳过，并提示你换模型。",
                         fontSize = 12.sp,
                         color = palette.textTertiary,
                     )
@@ -291,26 +266,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     aiModel = m
                     ChaoxingStore.setAiBase(app, baseDraft.trim())
                     aiBase = baseDraft.trim()
-
-                    val vk = visionDraft.trim()
-                    if (vk.isNotEmpty()) {
-                        ChaoxingStore.setVisionKey(app, vk)
-                        aiVisionKey = vk
-                    }
-                    val vm = visionModelDraft.trim()
-                    ChaoxingStore.setVisionModel(app, vm)
-                    aiVisionModel = vm
-                    ChaoxingStore.setVisionBase(app, visionBaseDraft.trim())
-                    aiVisionBase = visionBaseDraft.trim()
                     editAi = false
                 }) { Text("保存") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     ChaoxingStore.setAiKey(app, "")
-                    ChaoxingStore.setVisionKey(app, "")
                     aiKey = ""
-                    aiVisionKey = ""
                     editAi = false
                 }) { Text("清空 Key") }
             },

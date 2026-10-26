@@ -293,10 +293,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         }
         val apiBase = ChaoxingStore.aiBase(context).ifBlank { AiClient.DEFAULT_BASE }
         val model = ChaoxingStore.aiModel(context).ifBlank { AiClient.DEFAULT_MODEL }
-        // 图片题单独一套：没单独填就沿用文字那套（能用就用，不能用会由服务端报错再提示）
-        val vKey = ChaoxingStore.visionKey(context).ifBlank { key }
-        val vBase = ChaoxingStore.visionBase(context).ifBlank { apiBase }
-        val vModel = ChaoxingStore.visionModel(context).ifBlank { model }
+        // 现在只有一套模型。用户可能填的是纯文本模型，那就跳过看图的题，别硬问
+        val canSeeImage = AiSupport.looksVisionModel(model)
         solving = true
         solveNote = "读取题目…"
         webView.evaluateJavascript(QuizScripts.QUESTIONS) { raw ->
@@ -307,6 +305,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                 return@evaluateJavascript
             }
             val stats = intArrayOf(0, 0, list.size)
+            // 因「模型不识字图」被跳过的题数
+            var skipped = 0
             val hasAudio = list.any { it.audio.isNotBlank() || it.kind == "listening" }
             if (hasAudio) {
                 // 听力题先把播放倍速拨到 2 倍，帮用户省一半时间（页面允许的话）
@@ -389,26 +389,35 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     solving = false
                     solveNote = "填了 " + stats[0] + "/" + stats[2] + " 题" +
                         (if (stats[1] > 0) "，有 " + stats[1] + " 题没拿到答案" else "") +
+                        (if (skipped > 0) "，跳过 " + skipped + " 道看图题（当前模型不能识图）" else "") +
                         " · 没提交，自己看一眼再点提交"
                     if (stats[0] > 0) scanNote = "AI 已填 " + stats[0] + " 题（未提交）"
                 } else {
                     val q = list[at]
                     val picQuestion = q.images.isNotEmpty() && q.inputs > 0
-                    solveNote = "第 " + (at + 1) + "/" + list.size + " 题 · " + kindLabel(q.kind) +
-                        (if (picQuestion) " · 走视觉模型" else "")
-                    // webView.url 只能在主线程读 —— 放到后台线程里会直接崩（已实测踩到）
-                    val pageUrl = webView.url.orEmpty()
-                    Thread {
+                    // 纯文本模型做不了看图的题：不硬问、不瞎填，直接跳过并记一笔
+                    if (picQuestion && !canSeeImage) {
+                        skipped++
+                        if (!visionWarn) visionWarn = true
+                        solveNote = "第 " + (at + 1) + "/" + list.size + " 题 · 题面是图片，" +
+                            "当前模型是纯文本（" + model + "）· 跳过"
+                        stepRef?.invoke(at + 1)
+                    } else {
+                        solveNote = "第 " + (at + 1) + "/" + list.size + " 题 · " + kindLabel(q.kind) +
+                            (if (picQuestion) " · 走视觉模型" else "")
+                        // webView.url 只能在主线程读 —— 放到后台线程里会直接崩（已实测踩到）
+                        val pageUrl = webView.url.orEmpty()
+                        Thread {
                         // 听力题先转写，再把原文塞进同一次提问里 —— 之前是「先问、答不出来才转写」，
                         // 结果模型随便回一个字母就跳过了转写，听力全错。
                         val hasAudio = q.audio.isNotBlank() || q.kind == "listening"
                         val heard = if (hasAudio) transcribeAudio(q.audio, pageUrl, apiBase, key) else ""
-                        // 题面是图片的（Section A/B 那种）走视觉：一次问整块，按空位顺序填字母
+                        // 题面是图片的（Section A/B 那种）：一次问整块，按空位顺序填字母
                         if (picQuestion) {
                             val reply = AiClient.chatImages(
-                                vBase,
-                                vKey,
-                                vModel,
+                                apiBase,
+                                key,
+                                model,
                                 QuizPrompt.vision(courseContext(), q.inputs, heard, q.stem),
                                 q.images,
                             )
@@ -418,11 +427,11 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 return@Thread
                             }
                             if (!reply.ok && AiSupport.meansNoVision(reply.error)) {
-                                // 换不了模型的用户至少要被告知：这题做不了是因为接口读不了图
+                                // 模型名看着像视觉模型、实际服务端不认 —— 同样跳过，别把题空着乱填
                                 webView.post {
-                                    solving = false
-                                    visionWarn = true
-                                    solveNote = "这份作业的题面是图片，当前接口不支持识图"
+                                    skipped++
+                                    if (!visionWarn) visionWarn = true
+                                    stepRef?.invoke(at + 1)
                                 }
                                 return@Thread
                             }
@@ -431,7 +440,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                             AiClient.chat(apiBase, key, model, QuizPrompt.user(q, courseContext(), heard)),
                         )
                         webView.post { applyAt(q, ans, at) }
-                    }.start()
+                        }.start()
+                    }
                 }
             }
             stepRef?.invoke(0)
@@ -824,12 +834,13 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         if (visionWarn) {
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = { visionWarn = false },
-                title = { Text("该 API 无识图能力") },
+                title = { Text("当前模型是纯文本模型") },
                 text = {
                     Text(
-                        "这页的题面是图片，当前接口 / 模型不接受图片输入，做不了这几道。\n\n" +
-                            "去「设置 → AI Key」换成带视觉的模型：glm-4v-flash、gemini-2.0-flash、" +
-                            "gpt-4o 这一类。纯文本模型只能做文字题。",
+                        "这页的题面是图片，纯文本模型读不了图，所以这几道跳过了、没有乱填。\n\n" +
+                            "想让它做这类题：去「设置 → AI Key」，模型换成带视觉的" +
+                            "（glm-4v-flash、gemini-2.0-flash、gpt-4o 这一类）。\n" +
+                            "只做文字题的话，现在这套就能用。",
                         fontSize = 13.sp,
                     )
                 },
