@@ -417,7 +417,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 webView.post { applyLetters(q, values, 0, at) }
                                 return@Thread
                             }
-                            if (!reply.ok && AiPresets.meansNoVision(reply.error)) {
+                            if (!reply.ok && AiSupport.meansNoVision(reply.error)) {
                                 // 换不了模型的用户至少要被告知：这题做不了是因为接口读不了图
                                 webView.post {
                                     solving = false

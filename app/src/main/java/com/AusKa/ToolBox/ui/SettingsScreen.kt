@@ -1,42 +1,46 @@
 package com.AusKa.ToolBox.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.AusKa.ToolBox.BuildConfig
-import com.AusKa.ToolBox.chaoxing.AiPreset
-import com.AusKa.ToolBox.chaoxing.AiPresets
+import com.AusKa.ToolBox.chaoxing.AiProvider
+import com.AusKa.ToolBox.chaoxing.AiProviders
 import com.AusKa.ToolBox.data.AmapKeyStore
-import com.AusKa.ToolBox.data.ChaoxingStore
 import com.AusKa.ToolBox.data.Author
+import com.AusKa.ToolBox.data.ChaoxingStore
 import com.AusKa.ToolBox.data.TimetableStore
 import com.AusKa.ToolBox.data.UrlStore
-import com.AusKa.ToolBox.glass.LiquidGlass
 import com.AusKa.ToolBox.glass.GlassPalette
+import com.AusKa.ToolBox.glass.LiquidGlass
 import com.AusKa.ToolBox.glass.LocalGlassPalette
 
 /**
@@ -145,19 +149,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     trailingArrow = true,
                 )
                 GlassDivider()
-                GlassRow(
-                    title = "AI 模型",
-                    subtitle = "填服务商给的模型名，比如 gpt-4o-mini / deepseek-chat / qwen-plus",
-                    value = aiModel.ifBlank { "未填" },
-                    onClick = {
-                        aiDraft = ""
-                        modelDraft = aiModel
-                        baseDraft = aiBase
-                        editAi = true
-                    },
-                    trailingArrow = true,
-                )
-                GlassDivider()
                 // 31：贴卡自动拉起支付宝是个不可撤销的外发动作，得能关
                 GlassRow(
                     title = "贴卡自动签到",
@@ -241,7 +232,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     Spacer(Modifier.height(12.dp))
                     AiSectionTitle("文字题模型", "选择、填空、判断、简答这些纯文字题用这套", palette)
                     Spacer(Modifier.height(6.dp))
-                    AiPresetList(AiPresets.all, palette) { p ->
+                    AiProviderChips(AiProviders.text, palette) { p ->
                         baseDraft = p.base
                         modelDraft = p.model
                     }
@@ -263,7 +254,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         palette,
                     )
                     Spacer(Modifier.height(6.dp))
-                    AiPresetList(AiPresets.all.filter { it.vision }, palette) { p ->
+                    AiProviderChips(AiProviders.vision, palette) { p ->
                         visionBaseDraft = p.base
                         visionModelDraft = p.model
                     }
@@ -369,41 +360,42 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
 }
 
+/** 一行可横滑的服务商快捷项，点一下把地址和模型名填进当前这套配置 */
+@Composable
+private fun AiProviderChips(
+    providers: List<AiProvider>,
+    palette: GlassPalette,
+    onPick: (AiProvider) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        providers.forEach { p ->
+            Box(
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(palette.fieldFill)
+                    .clickable { onPick(p) }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    p.name,
+                    fontSize = 11.sp,
+                    color = if (p.vision) palette.success else palette.textSecondary,
+                )
+            }
+        }
+    }
+}
+
 /** 一组设置的小标题：主标题 + 一句解释 */
 @Composable
 private fun AiSectionTitle(title: String, hint: String, palette: GlassPalette) {
     Column {
         Text(title, fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
         Text(hint, fontSize = 11.sp, color = palette.textTertiary)
-    }
-}
-
-/** 内置服务商列表：点一行就把地址和模型填进当前这套配置 */
-@Composable
-private fun AiPresetList(
-    presets: List<AiPreset>,
-    palette: GlassPalette,
-    onPick: (AiPreset) -> Unit,
-) {
-    Column(modifier = Modifier.height(138.dp).verticalScroll(rememberScrollState())) {
-        presets.forEach { p ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onPick(p) }
-                    .padding(vertical = 5.dp),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(p.name, fontSize = 13.sp)
-                    Text(p.note, fontSize = 11.sp, color = palette.textTertiary)
-                }
-                Text(
-                    if (p.vision) "可读图" else "纯文本",
-                    fontSize = 11.sp,
-                    color = if (p.vision) palette.success else palette.textTertiary,
-                )
-            }
-        }
     }
 }
 
