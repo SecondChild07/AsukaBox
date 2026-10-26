@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件里的单行课程行：卡片矮的时候用，一行约 24dp，比两行版省一半高度 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="3dp"
+    android:background="@drawable/widget_row_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="8dp"
+    android:paddingVertical="2dp">
+
+    <ImageView
+        android:id="@+id/row_bar"
+        android:layout_width="3dp"
+        android:layout_height="12dp"
+        android:contentDescription="@null"
+        android:src="@drawable/widget_bar" />
+
+    <TextView
+        android:id="@+id/row_section"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:maxLines="1"
+        android:textColor="@color/widget_muted"
+        android:textSize="9sp" />
+
+    <TextView
+        android:id="@+id/row_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/widget_text"
+        android:textSize="10.5sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/row_room"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="5dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:maxWidth="84dp"
+        android:textColor="@color/widget_muted"
+        android:textSize="9sp" />
+</LinearLayout>

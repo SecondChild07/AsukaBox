@@ -24,6 +24,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.AusKa.ToolBox.chaoxing.ChaoxingScreen
 import com.AusKa.ToolBox.data.TimetableStore
 import com.AusKa.ToolBox.data.UrlStore
 
@@ -131,6 +132,7 @@ private fun FeatureDetail(
                 "nfc" -> SignScreen(activity = activity, store = store)
                 "timetable" -> TimetableScreen(store = timetableStore)
                 "location" -> LocationScreen()
+                "chaoxing" -> ChaoxingScreen()
                 else -> Unit
             }
         }

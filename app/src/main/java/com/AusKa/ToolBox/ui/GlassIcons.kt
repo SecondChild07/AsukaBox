@@ -185,3 +185,41 @@ fun DrawScope.locationIcon(color: Color) {
     drawCircle(color, r, Offset(cx, cy), style = Stroke(width = stroke))
     drawCircle(color, r * 0.30f, Offset(cx, cy))
 }
+
+
+/** 学习通：一本摊开的书（书脊 + 左右两页 + 书签） */
+fun DrawScope.bookIcon(color: Color) {
+    val s = size.minDimension
+    val stroke = s * 0.085f
+    val pad = s * 0.10f
+    val top = s * 0.19f
+    val bottom = s * 0.81f
+    val gap = s * 0.035f
+    val midX = size.width / 2f
+    val pageW = midX - pad - gap
+    val pageH = bottom - top
+    val radius = CornerRadius(s * 0.07f, s * 0.07f)
+
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(pad, top),
+        size = Size(pageW, pageH),
+        cornerRadius = radius,
+        style = Stroke(width = stroke),
+    )
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(midX + gap, top),
+        size = Size(pageW, pageH),
+        cornerRadius = radius,
+        style = Stroke(width = stroke),
+    )
+    drawLine(color, Offset(midX, top - s * 0.02f), Offset(midX, bottom + s * 0.02f), stroke, StrokeCap.Round)
+    drawLine(
+        color = color,
+        start = Offset(midX + gap + pageW * 0.58f, top + s * 0.02f),
+        end = Offset(midX + gap + pageW * 0.58f, top + pageH * 0.44f),
+        strokeWidth = stroke * 0.85f,
+        cap = StrokeCap.Round,
+    )
+}

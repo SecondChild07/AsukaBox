@@ -1,8 +1,10 @@
 package com.AusKa.ToolBox.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,7 +28,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.AusKa.ToolBox.BuildConfig
+import com.AusKa.ToolBox.chaoxing.AiPresets
 import com.AusKa.ToolBox.data.AmapKeyStore
+import com.AusKa.ToolBox.data.ChaoxingStore
 import com.AusKa.ToolBox.data.Author
 import com.AusKa.ToolBox.data.TimetableStore
 import com.AusKa.ToolBox.data.UrlStore
@@ -51,6 +55,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var amapKey by remember { mutableStateOf(AmapKeyStore.get(app)) }
     var editKey by remember { mutableStateOf(false) }
     var keyDraft by remember { mutableStateOf("") }
+    // 学习通助手的 AI Key / 模型名，都走 SecretBox 加密存本机
+    var aiKey by remember { mutableStateOf(ChaoxingStore.aiKey(app)) }
+    var aiModel by remember { mutableStateOf(ChaoxingStore.aiModel(app)) }
+    var aiBase by remember { mutableStateOf(ChaoxingStore.aiBase(app)) }
+    var editAi by remember { mutableStateOf(false) }
+    var aiDraft by remember { mutableStateOf("") }
+    var modelDraft by remember { mutableStateOf("") }
+    var baseDraft by remember { mutableStateOf("") }
     val hasAccount = ttStore.hasAccount
 
     Column(
@@ -104,6 +116,36 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         "已配置 · 地图搜索可以搜到具体地点",
                     value = if (amapKey.isBlank()) "未填" else "已填",
                     onClick = { keyDraft = amapKey; editKey = true },
+                    trailingArrow = true,
+                )
+                GlassDivider()
+                // 学习通助手的答题要用，放在设置里统一管
+                GlassRow(
+                    title = "AI Key",
+                    subtitle = if (aiKey.isBlank())
+                        "学习通助手里「AI 答题」要用（OpenAI 兼容接口的 key，只存本机）"
+                    else
+                        "已配置 · 已用 Keystore 加密存在本机",
+                    value = if (aiKey.isBlank()) "未填" else "已填",
+                    onClick = {
+                        aiDraft = ""
+                        modelDraft = aiModel
+                        baseDraft = aiBase
+                        editAi = true
+                    },
+                    trailingArrow = true,
+                )
+                GlassDivider()
+                GlassRow(
+                    title = "AI 模型",
+                    subtitle = "填服务商给的模型名，比如 gpt-4o-mini / deepseek-chat / qwen-plus",
+                    value = aiModel.ifBlank { "未填" },
+                    onClick = {
+                        aiDraft = ""
+                        modelDraft = aiModel
+                        baseDraft = aiBase
+                        editAi = true
+                    },
                     trailingArrow = true,
                 )
                 GlassDivider()
@@ -172,6 +214,104 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             },
             dismissButton = {
                 TextButton(onClick = { confirmWipe = false }) { Text("取消") }
+            },
+        )
+    }
+
+    if (editAi) {
+        AlertDialog(
+            onDismissRequest = { editAi = false },
+            title = { Text("AI 答题设置") },
+            text = {
+                Column {
+                    Text(
+                        "Key 只存在这台手机上（Keystore 加密），不会经过任何第三方服务器；答题时由 App 直接请求你填的服务商。",
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "内置接口（点一下自动填好地址和模型，Key 仍要自己去申请）",
+                        fontSize = 12.sp,
+                        color = palette.textTertiary,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Column(modifier = Modifier.height(150.dp).verticalScroll(rememberScrollState())) {
+                        AiPresets.all.forEach { p ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        baseDraft = p.base
+                                        modelDraft = p.model
+                                    }
+                                    .padding(vertical = 6.dp),
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(p.name, fontSize = 13.sp)
+                                    Text(p.note, fontSize = 11.sp, color = palette.textTertiary)
+                                }
+                                Text(
+                                    if (p.vision) "可读图" else "纯文本",
+                                    fontSize = 11.sp,
+                                    color = if (p.vision) palette.success else palette.textTertiary,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = aiDraft,
+                        onValueChange = { aiDraft = it },
+                        singleLine = true,
+                        placeholder = { Text(if (aiKey.isBlank()) "sk-…" else "留空表示不改动已存的 Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = modelDraft,
+                        onValueChange = { modelDraft = it },
+                        singleLine = true,
+                        placeholder = { Text("模型名，例如 gpt-4o-mini") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = baseDraft,
+                        onValueChange = { baseDraft = it },
+                        singleLine = true,
+                        placeholder = { Text("接口地址，留空就是 OpenAI 官方") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "模型名留空就用 gpt-4o-mini；接口地址填到 /v1 为止。" +
+                            "听力作业的题面是图片，只有带视觉的模型才能做，纯文本模型会提示「该 API 无识图能力」。",
+                        fontSize = 12.sp,
+                        color = palette.textTertiary,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val k = aiDraft.trim()
+                    if (k.isNotEmpty()) {
+                        ChaoxingStore.setAiKey(app, k)
+                        aiKey = k
+                    }
+                    val m = modelDraft.trim()
+                    ChaoxingStore.setAiModel(app, m)
+                    aiModel = m
+                    ChaoxingStore.setAiBase(app, baseDraft.trim())
+                    aiBase = baseDraft.trim()
+                    editAi = false
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    ChaoxingStore.setAiKey(app, "")
+                    aiKey = ""
+                    editAi = false
+                }) { Text("清空 Key") }
             },
         )
     }

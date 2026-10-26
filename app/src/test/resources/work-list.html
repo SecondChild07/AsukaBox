@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<script>
+    _HOST_ = "//mooc1.chaoxing.com";
+    _CP_ = "/mooc-ans";
+    _HOST_CP1_ = "//mooc1.chaoxing.com/mooc-ans";
+    // _HOST_CP2_ = _HOST_ + _CP_;
+    _HOST_CP2_ = _CP_;
+</script><head>
+<meta charset="UTF-8">
+<title>作业列表</title>
+<link href="//mooc1.chaoxing.com/mooc-ans/mooc2/css/work-list.css?v=2026-0708-1500" type="text/css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="//mooc1.chaoxing.com/mooc-ans/mooc2/css/taskStudent_pop.css" />
+<script type="text/javascript" src="//mooc-res2.chaoxing.com/mooc-ans/js/common/jquery.min.js"></script>
+<script type="text/javascript" src="//mooc-res2.chaoxing.com/mooc-ans/js/common/jquery-migrate.min.js"></script><script type="text/javascript" src="//mooc1.chaoxing.com/mooc-ans/js/jquery.nicescroll.min.js"></script>
+<script type="text/javascript" src="//mooc1.chaoxing.com/mooc-ans/mooc2/js/poplayout.js"></script>
+<script type="text/javascript" src="//mooc1.chaoxing.com/mooc-ans/mooc2/js/xlPaging.js"></script>
+<script src="//mooc1.chaoxing.com/mooc-ans/js/ServerHost.js"></script>
+<style>
+.check_repeat {display:inline-block;padding: 0 12px;background: #F2F4F7;border-radius:35px;line-height: 30px;color: #474C59;font-size: 14px;cursor: pointer;}
+.check_repeat i{display:inline-block;width:94px;height:18px;float:left;margin:6px 10px 0 0;}
+.check_repeat i img{width:100%;height:100%;display: block;}
+/*无障碍元素隐藏*/
+.element-invisible-hidden {
+	position: absolute !important;
+	clip: rect(1px 1px 1px 1px); /* IE6, IE7 */
+	clip: rect(1px, 1px, 1px, 1px);
+}
+.task-list .filter .title, .task-list .filter .fs12 {
+	font-size: 14px
+}
+
+.work-progress-box {
+	display: inline-block;
+	vertical-align: middle;
+	margin-left: 40px;
+	font-weight: 700;
+	color: #474C59;
+	font-size: 14px;
+}
+
+.progressWrap {
+	display: inline-block;
+	vertical-align: middle;
+	width: 120px;
+	height: 14px;
+	background: #EBF0F5;
+	border-radius: 100px;
+	margin-right: 14px;
+	position: relative;
+}
+
+.progressing {
+	position: absolute;
+	height: 100%;
+	top: 0;
+	left: 0;
+	background: #3A8BFF;
+	border-radius: 100px;
+}
+</style>
+</head>
+<body style="background: transparent;">
+<div id="workFocus" tabindex="0" aria-label=" 作业已刷新，请按tab键" role="option"></div>
+<div class="box">
+    <div class="content">
+        <div class="main task-list">
+            <div class="top-back" tabindex="0">
+                <h2>休体B251-252</h2>
+            </div>
+            
+            <input type="hidden" id="courseId" value="214647805" />
+			<input type="hidden" id="classId" value="152006885" />
+			<input type="hidden" id="cpi" value="503507458" />
+			<input type="hidden" id="enc" value="e5c287947b58d7c6565a66e39603b941" />
+			<input type="hidden" id="status" value="0" />
+			<input type="hidden" id="topicId" value="0" />
+
+            <div class="has-content" style="display: block;" tabindex="-1">
+                <div class="filter">
+										
+											<div class="check_repeat fr"  onclick="gotoDaya();"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/daya.png"></i>提交的作业将经过大雅相似度分析系统，请勿抄袭</div>
+															<span class="title">筛选</span>
+					<span class="ipt-radio circl-choosed">
+						<input name="group-radio" type="radio" onclick="changeStatus(this);" checked  data="0" tabindex="-1"/><i class="icon-radio"></i>
+					</span>
+					<div class="operate-list-group fs12 color181E33 lineheight20 inlineBlock">全部</div>
+
+					<span class="ipt-radio circl-choosed">
+						<input name="group-radio" type="radio" onclick="changeStatus(this);"  data="2" tabindex="-1"/><i class="icon-radio"></i>
+					</span>
+					<div class="operate-list-group fs12 color181E33 lineheight20 inlineBlock">已完成</div>
+
+					<span class="ipt-radio circl-choosed">
+						<input name="group-radio" type="radio" onclick="changeStatus(this);"  data="1" tabindex="-1"/><i class="icon-radio"></i>
+					</span>
+					<div class="operate-list-group fs12 color181E33 lineheight20 inlineBlock">未完成</div>
+										<div class="work-progress-box">
+						<div class="progressWrap"><span class="progressing" style="width:100.0%"></span></div>
+						<span>18/18</span>
+					</div>
+                </div>
+                
+                                <div class="bottomList" tabindex="0" aria-label="作业列表">
+                    <ul>
+                    																														
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=57047584&answerId=55482625&enc=7e252aed27685f7f1397e42715a3d7a1" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="四级听力 Unit 4 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">四级听力 Unit 4</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+																	<a href="javascript:;" onclick="answerList(57047584, 55482625, '7e252aed27685f7f1397e42715a3d7a1');" class="listSubmit fl insightBtn"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/answer-list.png"></i>作答记录</a>
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=57047584&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=57047512&answerId=55482632&enc=f23e9110cc87066488d110cae368600b" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="十句短对话U4 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">十句短对话U4</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=57047512&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=56829499&answerId=55462138&enc=0e26ce026fdd650a27a96827581f222d" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="U4 素食主义 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">U4 素食主义</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=56829499&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=56662686&answerId=55451963&enc=3a71fb3e77d0fa1e7260326138f90fbe" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="Task 5 of U4 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">Task 5 of U4</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=56662686&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=56556672&answerId=55445528&enc=7ce2d413b8a5efaf2046bf417e381584" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="十句短对话U3 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">十句短对话U3</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=56556672&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=56552885&answerId=55445527&enc=9db49c65b186346b5cb20d6fd583821a" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="四级听力 Unit 3 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">四级听力 Unit 3</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=56552885&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=56442933&answerId=55439220&enc=fa94e9ee98eb0173ccf0a92edc1d6029" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="U3 生活标准 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">U3 生活标准</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=56442933&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=56027908&answerId=55420139&enc=9a5a3f36227b96d551fad17ae42a51b0" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="Task 5 of U3 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">Task 5 of U3</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=56027908&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=55886353&answerId=55414072&enc=d3df92425d49bcfadbf82aecbc0615f8" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="Unit 1口语作业 ; 待批阅" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">Unit 1口语作业</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">待批阅</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=55886353&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=55870654&answerId=55412918&enc=cbd2ff426940020102dd56af7893a107" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="四级听力 Unit 2 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">四级听力 Unit 2</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=55870654&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=55869968&answerId=55412881&enc=dc37983483a89fc4dedf693576a5b095" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="十句短对话 U2 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">十句短对话 U2</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=55869968&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                        																													
+							
+																		
+																															
+                    	
+                    	<li onclick="goTask(this);" data="https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task?courseId=214647805&classId=152006885&cpi=503507458&workId=55600868&answerId=55400423&enc=0ba5b54ed516ff953d10d8e9abfb8e28" onkeydown="if(event.keyCode == 13){goTask(this);}" tabindex="0" aria-label="U2 美加文化 ; 已完成" role="link" >
+                            <div class="tag work-icon icon-zy"></div>
+                            <div class="right-content">
+                                <p class="overHidden2 fl">U2 美加文化</p>
+                                                                <div class="clear"></div>
+                                <p class="status fl">已完成</p>
+
+																	<a href="javascript:;" onclick="answerList(55600868, 55400423, '0ba5b54ed516ff953d10d8e9abfb8e28');" class="listSubmit fl insightBtn"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/answer-list.png"></i>作答记录</a>
+								
+																<a href="https://stat2-ans.chaoxing.com/study-knowledge/ans?courseid=214647805&cpi=503507458&clazzid=152006885&ut=s&relationId=55600868&type=2" class="listSubmit fl insightBtn" target="_blank" tabindex="-1"><i><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/insight.png"></i>智能分析</a>
+								                            </div>
+                                                        <div class="clearfix"></div>
+                        </li>
+                                            </ul>
+                </div>
+                            </div>
+            <div style="width:100%;height:110px;"></div>
+            <div class="pagePosition">
+				<div class="pageDiv" id="page"></div>
+			</div>
+			        </div>
+    </div>
+</div>
+
+<div class="maskDiv popMoveShowHide" style="display:none;" id="recordList">
+	<div class="popDiv wid640 popMove">
+		<div class="popHead">
+			<a href="javascript:;" onclick="closeAnswers();" class="popClose popMoveDele fr" style="margin-top: 5px;"><img src="//mooc1.chaoxing.com/mooc-ans/mooc2/images/popClose.png" /></a>
+			<p class="fl" style="color: #181E33;font-size: 18px;">查看作答记录</p>
+		</div>
+		<div class="het62"></div>
+				<div id="content"></div>
+	</div>
+</div>
+<script>
+
+var courseId = $("#courseId").val();
+var classId = $("#classId").val();
+var cpi = $("#cpi").val();
+var enc = $("#enc").val();
+var status = $("#status").val();
+var topicId = $("#topicId").val();
+
+	$("#page").paging({
+		nowPage : 1,
+		pageNum : 2,
+		buttonNum : 9, // 要展示的页码数量
+		callback : function(num) {
+			location.href = "/mooc-ans/mooc2/work/list?courseId=" + courseId + "&classId=" + classId + "&cpi=" + cpi 
+				+ "&enc=" + enc + "&status=" + status + "&pageNum=" + num + "&topicId=" + topicId;
+		}
+	});
+
+function goTask(obj) {
+	var url = $(obj).attr("data");
+	window.open(url, '_blank');
+}
+
+function changeStatus(obj) {
+	var data = $(obj).attr("data");
+	location.href = "/mooc-ans/mooc2/work/list?courseId=" + courseId + "&classId=" + classId + "&cpi=" + cpi + "&enc=" + enc + "&status=" + data;
+}
+
+$(function() {
+	$(".insightBtn").click(function(event) {
+		event.stopPropagation();
+	});
+
+	$(".bottomList ul li").each(function() {
+		var PLHeight = $(this).find(".right-content p.status").height();
+		var PHeight = $(this).find(".right-content p:first-child").height();
+		if (PLHeight == null) {
+			var marginTop = (40 - PHeight) / 2
+			$(this).find(".right-content p:first-child").css("margin-top", marginTop + "px");
+		}
+	});
+
+	if("0" == "1"){
+		tabIntoAccessibleCustom();
+	}
+});
+
+function tabIntoAccessibleCustom() {
+	if("0" == "1"){
+		try {
+			if (window.top && window.top.accessiblePlugs) {
+				// window.top.accessiblePlugs.taggeriframe();
+				window.top.accessiblePlugs.update();
+			}
+		} catch (e) {
+			console.log(e)
+		}
+	}
+}
+
+function gotoDaya() {
+	var url = ServerHost.dayaDomain;
+	window.open(url, "_blank");
+}
+
+var recordLock = 0
+function answerList(workId, answerId, enc) {
+	if(recordLock == 1) {
+		return;
+	}
+	recordLock = 1;
+
+	$.ajax({
+		type : "get",
+		url : _HOST_CP2_ + "/mooc2/work/answer-list",
+		dataType : "html",
+		data : {
+			courseId : courseId,
+			classId : classId,
+			cpi : cpi,
+			workId : workId,
+			answerId : answerId,
+			enc : enc
+		},
+		success : function(data) {
+			$("#content").html(data);
+			$(".popSetupShowHide").fullFadeIn();
+			$("#recordList").show();
+			MoveFixed();
+		}
+	});
+}
+
+function closeAnswers() {
+	$("#recordList").hide();
+	$('.popSetupShowHide').fullFadeOut();
+	recordLock = 0;
+}
+
+function MoveFixed() {
+	$('.popMove').css({
+		top : function() {
+			return ($(window).height() - $(this).height()) / 2;
+		},
+		left : function() {
+			return ($(window).width() - $(this).width()) / 2;
+		}
+	});
+
+	$("#boxscroll").niceScroll({
+		cursorborder : "",
+		cursorcolor : "#D9DDE1",
+		boxzoom : false
+	});
+}
+
+$(function(){
+	if("0" == "1"){
+		setTimeout(function() {
+			$('#workFocus').focus();
+		}, 500)
+	}
+})
+</script>
+</body>
+</html>

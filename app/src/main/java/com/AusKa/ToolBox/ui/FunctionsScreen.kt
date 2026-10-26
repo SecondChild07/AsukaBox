@@ -75,6 +75,13 @@ val featureList: List<Feature> = listOf(
         color = Color(0xFF7B61FF),
         draw = { locationIcon(it) },
     ),
+    Feature(
+        id = "chaoxing",
+        name = "学习通助手",
+        desc = "作业和考试在这里看，选择题自动回填",
+        color = Color(0xFFF0913A),
+        draw = { bookIcon(it) },
+    ),
 )
 
 /**

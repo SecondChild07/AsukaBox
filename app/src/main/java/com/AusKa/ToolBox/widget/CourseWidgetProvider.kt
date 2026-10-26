@@ -12,29 +12,108 @@ import android.widget.RemoteViews
 import com.AusKa.ToolBox.MainActivity
 import com.AusKa.ToolBox.R
 import com.AusKa.ToolBox.data.Course
-import com.AusKa.ToolBox.data.SectionTimes
 import com.AusKa.ToolBox.data.TermCalendar
-import com.AusKa.ToolBox.data.Timetable
 import com.AusKa.ToolBox.data.TimetableStore
 import com.AusKa.ToolBox.data.courseColor
 import java.util.Calendar
 
-/** 卡片里除了课程行之外的固定开销（内边距 + 头部 + 标题 + 脚注，单位 dp） */
-private const val FIXED_HEIGHT_DP = 84
+/** 卡片上下内边距之和（widget_course.xml paddingVertical 10dp × 2） */
+private const val PADDING_DP = 20
 
-/** 一行课占的高度（dp），和 widget_course_row.xml 对齐 */
-private const val ROW_HEIGHT_DP = 42
+/** 顶部那行日期（10sp，视觉高度约 15dp） */
+private const val HEADER_DP = 15
+
+/** 标题「今天 N 门」（15sp bold，含 2dp margin） */
+private const val TITLE_DP = 22
+
+/** widget_content 的 marginTop */
+private const val CONTENT_MARGIN_DP = 5
+
+/** 两行式课程行的实高（widget_course_row.xml：色条 24 + 上下 padding 12 + marginBottom 6 ≈ 47dp） */
+private const val ROW_TWO_LINE_DP = 47
+
+/** 单行式课程行的实高（widget_course_row_compact.xml，约 24dp） */
+private const val ROW_ONE_LINE_DP = 24
+
+/** 脚注「还有 N 门」那行 */
+private const val FOOTER_DP = 20
+
+/** launcher 还没给 OPTION_APPWIDGET_MAX_HEIGHT 时的兜底高度，按 3×2 估 */
+private const val FALLBACK_HEIGHT_DP = 150
+
+/** 课程行有两种排法：带地点的两行版，和挤成一条的单行版 */
+internal enum class RowStyle { TwoLine, OneLine }
+
+/** 这次重排的结果：用哪种行、几行、要不要头部/标题 */
+internal data class WidgetPlan(
+    val style: RowStyle,
+    val rows: Int,
+    val showHeader: Boolean,
+    val showTitle: Boolean,
+)
+
+/** 一行课在当前字体缩放下实际占多高 */
+internal fun rowHeightDp(style: RowStyle, fontScale: Float = 1f): Int {
+    val scale = fontScale.coerceIn(0.85f, 1.4f)
+    return when (style) {
+        RowStyle.TwoLine -> (ROW_TWO_LINE_DP * scale).toInt()
+        RowStyle.OneLine -> (ROW_ONE_LINE_DP * scale).toInt()
+    }
+}
 
 /**
- * 按小组件格子的实际高度算能塞下几行课。
+ * 按卡片实际高度决定怎么塞下今天的课。
  *
- * [maxHeightDp] 来自 `AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT`；先扣掉内边距 + 头部 + 标题 +
- * 脚注这些固定开销，再除以每行高度，最后夹在 1~6 之间（少于 1 行没意义，多于 6 行用户也看不完）。
- *
- * 单独拎出来是为了能写单元测试 —— 算小了第 3 行会被裁掉半截。
+ * 思路是从「好看」往「能装」逐级降级，第一档装得下就停：
+ *  ① 两行版 + 日期 + 标题
+ *  ② 两行版 + 日期（让掉标题）
+ *  ③ 单行版 + 日期 + 标题
+ *  ④ 单行版 + 日期
+ *  ⑤ 单行版（日期也让掉）
+ * 全都不够就截断，并优先保住日期行 —— 日期每天都要看，多一门少一门可以通过脚注提示拉高卡片。
  */
-internal fun widgetRows(maxHeightDp: Int): Int =
-    ((maxHeightDp - FIXED_HEIGHT_DP) / ROW_HEIGHT_DP).coerceIn(1, 6)
+internal fun widgetPlan(maxHeightDp: Int, count: Int, fontScale: Float = 1f): WidgetPlan {
+    if (count <= 0) return WidgetPlan(RowStyle.TwoLine, 0, true, true)
+
+    val scale = fontScale.coerceIn(0.85f, 1.4f)
+    val header = (HEADER_DP * scale).toInt()
+    val title = (TITLE_DP * scale).toInt()
+    val footer = (FOOTER_DP * scale).toInt()
+    val twoLine = rowHeightDp(RowStyle.TwoLine, scale)
+    val oneLine = rowHeightDp(RowStyle.OneLine, scale)
+
+    fun budget(withHeader: Boolean, withTitle: Boolean, withFooter: Boolean): Int {
+        var used = PADDING_DP + CONTENT_MARGIN_DP
+        if (withHeader) used += header
+        if (withTitle) used += title
+        if (withFooter) used += footer
+        return maxHeightDp - used
+    }
+
+    val ladder = listOf(
+        WidgetPlan(RowStyle.TwoLine, count, showHeader = true, showTitle = true),
+        WidgetPlan(RowStyle.TwoLine, count, showHeader = true, showTitle = false),
+        WidgetPlan(RowStyle.OneLine, count, showHeader = true, showTitle = true),
+        WidgetPlan(RowStyle.OneLine, count, showHeader = true, showTitle = false),
+        WidgetPlan(RowStyle.OneLine, count, showHeader = false, showTitle = false),
+    )
+    ladder.forEach { plan ->
+        val row = rowHeightDp(plan.style, scale)
+        if (count * row <= budget(plan.showHeader, plan.showTitle, withFooter = false)) {
+            return plan
+        }
+    }
+
+    // 装不下：留一行脚注，标题一定让掉，最后比较「留日期」和「多塞一门」哪个更划算
+    val cap = (count - 1).coerceAtLeast(1)
+    val withHeaderRows = (budget(true, false, true) / oneLine).coerceIn(1, cap)
+    val noHeaderRows = (budget(false, false, true) / oneLine).coerceIn(1, cap)
+    return if (noHeaderRows > withHeaderRows) {
+        WidgetPlan(RowStyle.OneLine, noHeaderRows, showHeader = false, showTitle = false)
+    } else {
+        WidgetPlan(RowStyle.OneLine, withHeaderRows, showHeader = true, showTitle = false)
+    }
+}
 
 /**
  * 桌面小组件：今天上什么课。
@@ -110,14 +189,20 @@ class CourseWidgetProvider : AppWidgetProvider() {
                 .filter { it.day == dow }
                 .sortedBy { it.startSection }
 
-            // 按 launcher 实际给的格子高度决定放几行，用户把卡片拉大就能多看几门
+            // 按 launcher 实际给出的格子高度决定用哪种行、放几门
             val maxHeightDp = manager.getAppWidgetOptions(id)
-                .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 160)
-            val maxRows = widgetRows(maxHeightDp)
+                .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+                .takeIf { it > 0 } ?: FALLBACK_HEIGHT_DP
+            val fontScale = context.resources.configuration.fontScale
+            val plan = widgetPlan(maxHeightDp, list.size, fontScale)
 
             views.setTextViewText(
                 R.id.widget_header,
                 "第 $week 周 · ${TermCalendar.monthDay(today)} 周${DAY_NAMES[dow - 1]}",
+            )
+            views.setViewVisibility(
+                R.id.widget_header,
+                if (plan.showHeader) View.VISIBLE else View.GONE,
             )
             views.removeAllViews(R.id.widget_content)
 
@@ -128,33 +213,73 @@ class CourseWidgetProvider : AppWidgetProvider() {
                     R.id.widget_content,
                     hintText(context, "今日无课", "第 $week 周 · 周${DAY_NAMES[dow - 1]}"),
                 )
-            } else {
-                views.setViewVisibility(R.id.widget_title, View.VISIBLE)
-                views.setTextViewText(R.id.widget_title, "今天 ${list.size} 门")
-                list.take(maxRows).forEach { course ->
-                    views.addView(R.id.widget_content, buildRow(context, course))
-                }
-                val rest = list.size - maxRows
-                if (rest > 0) {
-                    views.setTextViewText(R.id.widget_footer, "还有 $rest 门 · 点开看整周")
+                views.setOnClickPendingIntent(R.id.widget_root, openApp(context))
+                manager.updateAppWidget(id, views)
+                return
+            }
+
+            views.setViewVisibility(
+                R.id.widget_title,
+                if (plan.showTitle) View.VISIBLE else View.GONE,
+            )
+            if (plan.showTitle) views.setTextViewText(R.id.widget_title, "今天 ${list.size} 门")
+
+            list.take(plan.rows).forEach { course ->
+                views.addView(R.id.widget_content, buildRow(context, course, plan.style))
+            }
+
+            val rest = list.size - plan.rows
+            when {
+                rest > 0 -> {
+                    views.setTextViewText(R.id.widget_footer, "还有 $rest 门 · 把卡片拉高")
                     views.setViewVisibility(R.id.widget_footer, View.VISIBLE)
-                } else {
-                    views.setViewVisibility(R.id.widget_footer, View.GONE)
                 }
+                !plan.showTitle -> {
+                    // 标题被让掉了，用脚注补一句总数，免得看着像漏课
+                    views.setTextViewText(
+                        R.id.widget_footer,
+                        if (plan.showHeader) {
+                            "今天 ${list.size} 门 · 全在这"
+                        } else {
+                            "第 $week 周 · ${list.size} 门全在这"
+                        },
+                    )
+                    views.setViewVisibility(R.id.widget_footer, View.VISIBLE)
+                }
+                else -> views.setViewVisibility(R.id.widget_footer, View.GONE)
             }
 
             views.setOnClickPendingIntent(R.id.widget_root, openApp(context))
             manager.updateAppWidget(id, views)
         }
 
-        private fun buildRow(context: Context, course: Course): RemoteViews {
-            val row = RemoteViews(context.packageName, R.layout.widget_course_row)
-            row.setTextViewText(R.id.row_section, if (course.sectionSpan > 1) "${course.startSection}-${course.endSection}" else "${course.startSection}")
+        private fun buildRow(context: Context, course: Course, style: RowStyle): RemoteViews {
+            val layout = if (style == RowStyle.TwoLine) {
+                R.layout.widget_course_row
+            } else {
+                R.layout.widget_course_row_compact
+            }
+            val row = RemoteViews(context.packageName, layout)
+            row.setTextViewText(R.id.row_section, sectionLabel(course))
             row.setTextViewText(R.id.row_name, course.name)
-            row.setTextViewText(R.id.row_room, course.room.ifBlank { "地点未排" })
+            if (style == RowStyle.TwoLine) {
+                row.setTextViewText(R.id.row_room, course.room.ifBlank { "地点未排" })
+            } else if (course.room.isBlank()) {
+                row.setViewVisibility(R.id.row_room, View.GONE)
+            } else {
+                row.setTextViewText(R.id.row_room, course.room)
+            }
             row.setInt(R.id.row_bar, "setColorFilter", courseColor(course.name))
             return row
         }
+
+        /** 连堂课显示「3-4」，单节只显示起始节 */
+        private fun sectionLabel(course: Course): String =
+            if (course.sectionSpan > 1) {
+                "${course.startSection}-${course.endSection}"
+            } else {
+                "${course.startSection}"
+            }
 
         /** 空态用的两行字：一句小标题 + 一句正文，居中放在卡片中间那块 */
         private fun hintText(context: Context, label: String, detail: String): RemoteViews {

@@ -35,3 +35,10 @@
 # 入口类保留（Manifest 引用，R8 本来也会 handle，这里显式声明防误删）
 -keep class com.AusKa.ToolBox.BoxApp { *; }
 -keep class com.AusKa.ToolBox.MainActivity { *; }
+
+# 学习通助手的 JS 桥：R8 会把没被引用的 @JavascriptInterface 方法当死代码删掉，
+# 删掉之后 addJavascriptInterface 注入的对象在页面里就只剩空壳。
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keep class com.AusKa.ToolBox.chaoxing.CsBridge { *; }
