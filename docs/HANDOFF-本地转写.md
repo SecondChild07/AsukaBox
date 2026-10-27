@@ -461,3 +461,15 @@ Release 资产：
 | `sensevoice-model.zip` | 229 MB | 模型本体 |
 
 仓库简介同步改成「…AI 答题只测过 DeepSeek V4.1 Flash」，README 加了「测过的」一节。
+
+### 坑：README 图片更新后 GitHub 还显示旧图
+
+第一次只是把 `docs/shots.png` 的内容换掉（同路径），提交也推上去了，远端 blob 确实是新文件（1,428,879 字节），
+但页面上还是 2.0 的旧截图 —— `<img src>` 指向的 URL 没变，浏览器和 GitHub 的图片缓存都不会重新拉。
+
+正解：**换个文件名**。已改成 `docs/shots-2.1.png`，README 的 `<img src>` 同步改，旧 URL 直接失效。
+以后每次大改界面，截图都存成新名字（`shots-2.2.png`…），`tools/make_shots.py` 的第三个参数就是输出路径：
+
+```bash
+python tools/make_shots.py 首页.png 对话框.png docs/shots-2.2.png
+```
