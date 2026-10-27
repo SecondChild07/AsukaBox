@@ -8,7 +8,17 @@
 
 <img src="docs/shots.png" width="100%">
 
-**[下载 APK](https://github.com/SecondChild07/AsukaBox/releases/latest)** · 2.1 · Android 7.0+
+## 下载
+
+都在 [Releases](https://github.com/SecondChild07/AsukaBox/releases/latest)，Android 7.0+。
+
+| 文件 | 大小 | 说明 |
+|---|---|---|
+| `AsukaBox-2.1.apk` | 52 MB | 瘦包。听力第一次用时下载 228 MB 语音模型，也可以从手机文件导入 |
+| `AsukaBox-2.1-full.apk` | 281 MB | 完整包。语音模型已内置，装完直接用，做听力全程不联网 |
+| `sensevoice-model.zip` | 229 MB | 语音模型本体，给瘦包手动导入：设置 → 听力转写 → 从手机文件导入 |
+
+两个 APK 签名相同，可以互相覆盖升级；和 2.0 及更早的包签名不同，先卸载旧的再装。
 
 ---
 
@@ -88,6 +98,12 @@ RELEASE_KEY_PASSWORD=***
 - `ACCESS_MOCK_LOCATION`：进「模拟位置信息应用」列表
 - `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION`：Android 10~13 前台服务的硬性要求，App 不读你的位置
 - `POST_NOTIFICATIONS`：虚拟定位的前台服务通知
+
+## 测过的
+
+- AI 答题只在 **DeepSeek V4.1 Flash**（模型名 `deepseek-flash`）上跑过完整流程：一份 25 空听力作业，按顺序填完、没提交。OpenAI、智谱、硅基流动、Groq 这些走同一套 OpenAI 兼容协议，没有逐家实跑，出问题请在 issue 里带上原始报错。
+- 语音转写用 sherpa-onnx + SenseVoice（中英日韩粤一份模型）。英文测试音频逐字正确，中文短句正常；只在 x86_64 模拟器上验证过，arm64 真机是同一份代码编译，以你手机上的结果为准。
+- NFC 签到、课表导入、虚拟定位依赖各自的外部环境（标签、教务站点、开发者选项），只做到能跑通，不保证覆盖所有学校。
 
 ## 范围
 
