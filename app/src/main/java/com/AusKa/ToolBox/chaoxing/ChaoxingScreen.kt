@@ -1644,6 +1644,11 @@ private fun transcribeAudio(
     }
 
     var local = ChaoxingStore.sttMode(context) == ChaoxingStore.STT_LOCAL
+    // 选了云端但没填转写地址：别把音频 POST 到聊天接口上去（会白等一个 400）
+    if (!local && ChaoxingStore.sttBase(context).isBlank()) {
+        onNote("云端转写没填接口地址，这次不转写")
+        return ""
+    }
     if (local && !LocalAsr.isReady(context)) {
         if (apiBase.isNotBlank() && key.isNotBlank()) {
             // 配了云端就别让用户干等 228 MB 下载
