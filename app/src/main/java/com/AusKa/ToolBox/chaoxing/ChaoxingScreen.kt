@@ -474,9 +474,10 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         // 听力题先转写，再把原文塞进同一次提问里 —— 之前是「先问、答不出来才转写」，
                         // 结果模型随便回一个字母就跳过了转写，听力全错。
                         val hasAudio = q.audio.isNotBlank() || q.kind == "listening"
+                        val sttConfigured = ChaoxingStore.sttBase(context).isNotBlank()
                         val sttBase = ChaoxingStore.sttBase(context).ifBlank { apiBase }
                         val sttKey2 = ChaoxingStore.sttKey(context).ifBlank { key }
-                        val heard = if (hasAudio) transcribeAudio(q.audio, pageUrl, sttBase, sttKey2, ChaoxingStore.sttModel(context)) else ""
+                        val heard = if (hasAudio && sttConfigured) transcribeAudio(q.audio, pageUrl, sttBase, sttKey2, ChaoxingStore.sttModel(context)) else ""
                         if (hasAudio && heard.isBlank()) webView.post { noTranscript++ }
                         // 题面是图片的（Section A/B 那种）：一次问整块，按空位顺序填字母
                         // 题库优先：命中的话直接用，不问模型（图片题先跳过题库，题面在图里对不上文本）

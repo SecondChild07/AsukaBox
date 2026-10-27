@@ -390,6 +390,20 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         fontSize = 11.sp,
                     )
                     Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        listOf(
+                            Triple("智谱", "https://open.bigmodel.cn/api/paas/v4", "glm-asr-2512"),
+                            Triple("SiliconFlow", "https://api.siliconflow.cn/v1", "FunAudioLLM/SenseVoiceSmall"),
+                            Triple("OpenAI", "https://api.openai.com/v1", "whisper-1"),
+                            Triple("Groq", "https://api.groq.com/openai/v1", "whisper-large-v3"),
+                        ).forEach { (name, b, m) ->
+                            TextButton(onClick = {
+                                sttBaseDraft = b
+                                sttModelDraft = m
+                            }) { Text(name, fontSize = 12.sp) }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
                     OutlinedTextField(
                         value = sttBaseDraft,
                         onValueChange = { sttBaseDraft = it },
