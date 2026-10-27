@@ -1645,10 +1645,24 @@ private fun transcribeAudio(raw: String, base: String, apiBase: String, key: Str
     urls.forEach { u ->
         val bytes = HttpText.bytes(u, cookieFor(u), base)
         if (bytes.isEmpty()) return@forEach
-        val text = AiClient.transcribe(apiBase, key, bytes, sttModel.ifBlank { "whisper-1" })
-        if (text.isNotBlank()) {
-            if (sb.isNotEmpty()) sb.append('\n')
-            sb.append(text)
+        val model = sttModel.ifBlank { "whisper-1" }
+        // 有的接口只收 30 秒以内的音频（智谱 GLM-ASR），所以先切成小段再逐段转写；
+        // 切不出来（解码失败）就退回整文件上传。
+        val chunks = AudioChunks.wavChunks(bytes)
+        if (chunks.isEmpty()) {
+            val text = AiClient.transcribe(apiBase, key, bytes, model)
+            if (text.isNotBlank()) {
+                if (sb.isNotEmpty()) sb.append('\n')
+                sb.append(text)
+            }
+        } else {
+            chunks.forEach { c ->
+                val text = AiClient.transcribe(apiBase, key, c, model, "a.wav")
+                if (text.isNotBlank()) {
+                    if (sb.isNotEmpty()) sb.append('\n')
+                    sb.append(text)
+                }
+            }
         }
     }
     val result = sb.toString()
