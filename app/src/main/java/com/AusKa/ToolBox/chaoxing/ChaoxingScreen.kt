@@ -319,6 +319,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             var uncertain = 0
             // 题库直接命中的题数（命中就不问模型）
             var fromBank = 0
+            // 听力题没拿到转写（服务商没有语音转文字接口）的题数
+            var noTranscript = 0
             // 所有线程共用：记下前几条失败原因，结束时直接显示，避免「0 题」但看不出为什么
             val errors = java.util.Collections.synchronizedList(mutableListOf<String>())
             val hasAudio = list.any { it.audio.isNotBlank() || it.kind == "listening" }
@@ -329,44 +331,6 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             solveNote = if (hasAudio) "共 " + list.size + " 题 · 听力 2 倍速 · 开始填…" else "共 " + list.size + " 题 · 开始填…"
 
             var stepRef: ((Int) -> Unit)? = null
-
-            // 并发但不影响正确率：只提前问后面两道（顺序、回填、核验都不变），
-            // 音频题和图片题不预取 —— 它们要么要转写、要么一次问一整块，提前问会多花钱。
-            val prefetch = java.util.concurrent.ConcurrentHashMap<Int, QuizAnswer>()
-            val prefetchBusy = java.util.Collections.newSetFromMap(
-                java.util.concurrent.ConcurrentHashMap<Int, Boolean>(),
-            )
-
-            fun prefetchAt(at2: Int) {
-                if (at2 >= list.size) return
-                val q2 = list[at2]
-                if (q2.images.isNotEmpty() && q2.inputs > 0) return
-                if (q2.audio.isNotBlank() || q2.kind == "listening") return
-                if (prefetch.containsKey(at2) || !prefetchBusy.add(at2)) return
-                Thread {
-                    runCatching {
-                        var r = AiClient.chatResult(
-                            apiBase,
-                            key,
-                            model,
-                            QuizPrompt.user(q2, courseContext()),
-                        )
-                        var a = AiParse.answer(r.text)
-                        if (a.conf < 0.8) {
-                            val r2 = AiClient.chatResult(
-                                apiBase,
-                                key,
-                                model,
-                                QuizPrompt.retry(q2, courseContext()),
-                            )
-                            val a2 = AiParse.answer(r2.text)
-                            if (a2.conf >= a.conf) a = a2
-                        }
-                        if (a.letters.isNotEmpty() || a.texts.isNotEmpty()) prefetch[at2] = a
-                    }
-                    prefetchBusy.remove(at2)
-                }.start()
-            }
 
             fun applyText(q: QuizQuestion, parts: List<String>, at: Int, slot: Int) {
                 if (slot >= parts.size) {
@@ -483,6 +447,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         (if (overwritten > 0) "，改了 " + overwritten + " 道之前的错选" else "") +
                         (if (uncertain > 0) "，" + uncertain + " 题没把握、留给你自己看" else "") +
                         (if (fromBank > 0) "，其中 " + fromBank + " 题来自题库" else "") +
+                        (if (noTranscript > 0) "；" + noTranscript + " 道听力题没拿到转写（当前服务商没有语音转文字接口），只能靠图猜" else "") +
                         (if (skipped > 0) "，跳过 " + skipped + " 道看图题（当前接口不认图片）" else "") +
                         (if (stats[0] == 0 && firstError.isNotEmpty()) "。原因：" + AiSupport.friendly(firstError) else "") +
                         " · 没提交，自己看一眼再点提交"
@@ -505,14 +470,12 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         webView.evaluateJavascript(QuizExtra.currentJs(q.index)) { state ->
                             val prev = parseChecked(state)
                             val prevFilled = parseFilled(state)
-                        // 顺手把后面两道提前问上（顺序和核验都不变）
-                        prefetchAt(at + 1)
-                        prefetchAt(at + 2)
                             Thread {
                         // 听力题先转写，再把原文塞进同一次提问里 —— 之前是「先问、答不出来才转写」，
                         // 结果模型随便回一个字母就跳过了转写，听力全错。
                         val hasAudio = q.audio.isNotBlank() || q.kind == "listening"
                         val heard = if (hasAudio) transcribeAudio(q.audio, pageUrl, apiBase, key) else ""
+                        if (hasAudio && heard.isBlank()) webView.post { noTranscript++ }
                         // 题面是图片的（Section A/B 那种）：一次问整块，按空位顺序填字母
                         // 题库优先：命中的话直接用，不问模型（图片题先跳过题库，题面在图里对不上文本）
                         if (!picQuestion) {
@@ -566,11 +529,6 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 }
                                 return@Thread
                             }
-                        }
-                        val ready = if (!hasAudio) prefetch[at] else null
-                        if (ready != null) {
-                            webView.post { applyAt(q, ready, at, prev, prevFilled) }
-                            return@Thread
                         }
                         // 一次不够：把握 < 0.8 再让它算一遍，取更确定的那个
                         var reply = AiClient.chatResult(
