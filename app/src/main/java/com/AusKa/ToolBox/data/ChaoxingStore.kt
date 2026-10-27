@@ -20,6 +20,8 @@ internal object ChaoxingStore {
     private const val K_AI_KEY = "ai_key"
     private const val K_AI_MODEL = "ai_model"
     private const val K_STT_MODEL = "ai_stt_model"
+    private const val K_STT_BASE = "ai_stt_base"
+    private const val K_STT_KEY = "ai_stt_key"
     private const val K_AI_BASE = "ai_base"
     private const val K_PROVIDERS = "ai_providers"
     // 图片题（听力作业把题面做成图）单独一套配置，可以和第二套指向不同服务商
@@ -74,6 +76,24 @@ internal object ChaoxingStore {
         val k = value.trim()
         val e = prefs(context).edit()
         if (k.isEmpty()) e.remove(K_AI_KEY) else e.putString(K_AI_KEY, SecretBox.seal(k))
+        e.apply()
+    }
+
+    fun sttBase(context: Context): String =
+        prefs(context).getString(K_STT_BASE, "").orEmpty()
+
+    fun setSttBase(context: Context, v: String) {
+        val e = prefs(context).edit()
+        if (v.isEmpty()) e.remove(K_STT_BASE) else e.putString(K_STT_BASE, v)
+        e.apply()
+    }
+
+    fun sttKey(context: Context): String =
+        SecretBox.open(prefs(context).getString(K_STT_KEY, "").orEmpty())
+
+    fun setSttKey(context: Context, v: String) {
+        val e = prefs(context).edit()
+        if (v.isEmpty()) e.remove(K_STT_KEY) else e.putString(K_STT_KEY, SecretBox.seal(v))
         e.apply()
     }
 

@@ -87,6 +87,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var bankOn by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.QuizBank.enabled(app)) }
     var bankCount by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.QuizBank.localCount(app)) }
     var editBank by remember { mutableStateOf(false) }
+    var editStt by remember { mutableStateOf(false) }
+    var sttBaseDraft by remember { mutableStateOf("") }
+    var sttKeyDraft by remember { mutableStateOf("") }
+    var sttModelDraft by remember { mutableStateOf("") }
     var bankDraft by remember { mutableStateOf("") }
     var bankNote by remember { mutableStateOf("") }
     var bankUrlDraft by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.QuizBank.endpoint(app)) }
@@ -384,6 +388,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         bankUrlDraft = com.AusKa.ToolBox.chaoxing.QuizBank.endpoint(app)
                         editBank = true
                     }) { Text("题库（先查题库，再问模型）", fontSize = 12.sp) }
+                    TextButton(onClick = {
+                        sttBaseDraft = ChaoxingStore.sttBase(app)
+                        sttKeyDraft = ""
+                        sttModelDraft = ChaoxingStore.sttModel(app)
+                        editStt = true
+                    }) { Text("语音转写（听力用，可选）", fontSize = 12.sp) }
                 }
             },
             confirmButton = {
@@ -414,6 +424,66 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         )
     }
 
+    if (editStt) {
+        AlertDialog(
+            onDismissRequest = { editStt = false },
+            title = { Text("语音转写") },
+            text = {
+                Column {
+                    Text(
+                        "听力题的音频要靠转写才能做题。DeepSeek 没有这个接口，所以要单独填一个能转写的服务（OpenAI、硅基流动、Groq 都行）；留空就用上面那套。",
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = sttBaseDraft,
+                        onValueChange = { sttBaseDraft = it },
+                        label = { Text("接口地址") },
+                        placeholder = { Text("https://api.openai.com/v1") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = sttKeyDraft,
+                        onValueChange = { sttKeyDraft = it },
+                        label = { Text("Key") },
+                        placeholder = { Text("留空表示沿用上面那套 Key") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = sttModelDraft,
+                        onValueChange = { sttModelDraft = it },
+                        label = { Text("转写模型名") },
+                        placeholder = { Text("whisper-1 / FunAudioLLM/SenseVoiceSmall") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    ChaoxingStore.setSttBase(app, sttBaseDraft.trim())
+                    if (sttKeyDraft.isNotBlank()) ChaoxingStore.setSttKey(app, sttKeyDraft.trim())
+                    ChaoxingStore.setSttModel(app, sttModelDraft.trim())
+                    editStt = false
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    ChaoxingStore.setSttBase(app, "")
+                    ChaoxingStore.setSttKey(app, "")
+                    ChaoxingStore.setSttModel(app, "")
+                    sttBaseDraft = ""
+                    sttKeyDraft = ""
+                    sttModelDraft = ""
+                    editStt = false
+                }) { Text("清空") }
+            },
+        )
+    }
     if (editBank) {
         AlertDialog(
             onDismissRequest = { editBank = false },
