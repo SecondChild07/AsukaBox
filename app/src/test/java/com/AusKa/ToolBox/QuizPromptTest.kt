@@ -20,9 +20,9 @@ class QuizPromptTest {
         assertTrue(s.contains("另起一行"))
         assertTrue(s.contains("不要解释"))
         // 不确定要留空，而不是瞎猜
-        assertTrue(s.contains("不确定"))
+        assertTrue(s.contains("conf"))
         // 六种格式都在
-        listOf("\"answer\":\"C\"", "\"pairs\"", "\"answer\":[\"").forEach {
+        listOf("\"answer\":\"C\",\"conf\":0.92", "\"pairs\"", "\"answer\":[\"").forEach {
             assertTrue("缺少格式样例：$it", s.contains(it))
         }
     }

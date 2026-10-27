@@ -106,12 +106,6 @@ fun SignScreen(
                 } else {
                     "已自动填入链接 ✓ " + UrlPicker.shortUrl(best)
                 }
-                if (store.autoCheckin) {
-                    scope.launch {
-                        delay(700)
-                        doCheckin(best)
-                    }
-                }
             }
         }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,6 +37,7 @@ import com.AusKa.ToolBox.data.AmapKeyStore
 import com.AusKa.ToolBox.data.Author
 import com.AusKa.ToolBox.chaoxing.AiEndpoints
 import com.AusKa.ToolBox.data.ChaoxingStore
+import com.AusKa.ToolBox.data.SectionTimesStore
 import com.AusKa.ToolBox.data.TimetableStore
 import com.AusKa.ToolBox.data.UrlStore
 import com.AusKa.ToolBox.glass.GlassPalette
@@ -55,7 +57,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val app = context.applicationContext
     val urlStore = remember { UrlStore(app) }
     val ttStore = remember { TimetableStore.get(app) }
-    var autoCheckin by remember { mutableStateOf(urlStore.autoCheckin) }
     var confirmWipe by remember { mutableStateOf(false) }
     var amapKey by remember { mutableStateOf(AmapKeyStore.get(app)) }
     var editKey by remember { mutableStateOf(false) }
@@ -69,6 +70,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var modelDraft by remember { mutableStateOf("") }
     var baseDraft by remember { mutableStateOf("") }
     var showAdvanced by remember { mutableStateOf(false) }
+    // 上课时间：12 节的开始/结束，改完立刻落盘并刷新课表
+    var editTimes by remember { mutableStateOf(false) }
+    var timeDraft by remember { mutableStateOf(listOf<Pair<String, String>>()) }
     val hasAccount = ttStore.hasAccount
 
     Column(
@@ -142,21 +146,15 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     trailingArrow = true,
                 )
                 GlassDivider()
-                // 31：贴卡自动拉起支付宝是个不可撤销的外发动作，得能关
                 GlassRow(
-                    title = "贴卡自动签到",
-                    subtitle = if (autoCheckin) "读到链接就自动拉起支付宝" else "只显示链接，点了才拉起",
-                    value = if (autoCheckin) "开" else "关",
-                    onClick = {
-                        autoCheckin = !autoCheckin
-                        urlStore.autoCheckin = autoCheckin
-                    },
-                )
-                GlassDivider()
-                GlassRow(
-                    title = "清除签到链接",
-                    subtitle = "把存在本机的支付宝签到链接删掉",
-                    onClick = { urlStore.clear() },
+                    title = "上课时间",
+                    subtitle = if (SectionTimesStore.hasCustom(app))
+                        "已自定义 · 课表按你设的时间显示"
+                    else
+                        "课表里每节课的时间，默认 8:00 开始的常见作息",
+                    value = "改",
+                    onClick = { timeDraft = loadTimes(app); editTimes = true },
+                    trailingArrow = true,
                 )
                 if (hasAccount) {
                     GlassDivider()
@@ -199,9 +197,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             confirmButton = {
                 TextButton(onClick = {
                     ttStore.wipeAccount()
-                    urlStore.autoCheckin = false
                     // 开关的本地状态也得跟着关，否则这一行会一直显示「开」到离开设置页
-                    autoCheckin = false
                     confirmWipe = false
                 }) { Text("删除") }
             },
@@ -301,6 +297,72 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         )
     }
 
+    if (editTimes) {
+        AlertDialog(
+            onDismissRequest = { editTimes = false },
+            title = { Text("上课时间") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "按你学校的作息改，写成 08:00 这种；留空就用默认值。改完课表马上跟着变。",
+                        fontSize = 12.sp,
+                        color = palette.textTertiary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    timeDraft.forEachIndexed { index, pair ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("第 ${index + 1} 节", fontSize = 12.sp, modifier = Modifier.width(58.dp))
+                            OutlinedTextField(
+                                value = pair.first,
+                                onValueChange = { v ->
+                                    timeDraft = timeDraft.toMutableList().also {
+                                        it[index] = v to it[index].second
+                                    }
+                                },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("开始", fontSize = 11.sp) },
+                            )
+                            Text(" - ", fontSize = 12.sp)
+                            OutlinedTextField(
+                                value = pair.second,
+                                onValueChange = { v ->
+                                    timeDraft = timeDraft.toMutableList().also {
+                                        it[index] = it[index].first to v
+                                    }
+                                },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("结束", fontSize = 11.sp) },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    timeDraft.forEachIndexed { index, pair ->
+                        val s = SectionTimesStore.parseTime(pair.first)
+                        val e = SectionTimesStore.parseTime(pair.second)
+                        if (s != null || e != null) {
+                            SectionTimesStore.save(app, index + 1, s ?: "", e ?: "")
+                        }
+                    }
+                    editTimes = false
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    SectionTimesStore.reset(app)
+                    timeDraft = loadTimes(app)
+                    editTimes = false
+                }) { Text("恢复默认") }
+            },
+        )
+    }
     if (editKey) {
         AlertDialog(
             onDismissRequest = { editKey = false },
@@ -402,3 +464,9 @@ private fun requestWidgetPin(context: android.content.Context) {
             .show()
     }
 }
+
+/** 读 12 节课的上/下课时间，编辑对话框用 */
+private fun loadTimes(context: android.content.Context): List<Pair<String, String>> =
+    (1..SectionTimesStore.SECTIONS).map {
+        SectionTimesStore.start(context, it) to SectionTimesStore.end(context, it)
+    }

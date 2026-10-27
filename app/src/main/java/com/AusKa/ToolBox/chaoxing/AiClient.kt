@@ -64,7 +64,12 @@ internal object QuizParse {
 }
 
 /** 模型给出的答案 */
-internal data class QuizAnswer(val letters: String = "", val texts: List<String> = emptyList())
+internal data class QuizAnswer(
+    val letters: String = "",
+    val texts: List<String> = emptyList(),
+    /** 模型自报的把握，0~1；没给就按 1.0 算（老提示词不影响） */
+    val conf: Double = 1.0,
+)
 
 /** 一次调用的结果：正文 + 出错原因（界面据此判断「这个接口不能识图」） */
 internal data class AiResult(val text: String, val error: String = "") {

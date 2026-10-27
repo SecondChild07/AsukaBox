@@ -19,9 +19,11 @@ internal object QuizPrompt {
             "② 答案必须基于题目本身（题干、选项、听力原文），不要编造题目里不存在的信息；" +
             "③ 先定位关键句再下结论：干扰项常和原文用词相近但偷换主语、时间、数量或因果，" +
             "把「原文到底说了什么」和「选项说成了什么」分开比对；同义改写算匹配，程度词不一致不算；" +
-            "④ 不确定时宁可留空（输出 {\"answer\":\"\"}），也不要猜；" +
-            "⑤ 格式：选择题 {\"answer\":\"C\"}（多选按字母升序拼，如 \"ACD\"）；" +
-            "判断题 {\"answer\":\"对\"} 或 {\"answer\":\"错\"}；" +
+            "④ 每道题都要带一个 conf 字段（0~1，表示你对这道题有多确定），" +
+        "低于 0.8 就说明你在猜，同时要尽量给出你倾向的答案；" +
+        "实在完全没头绪才输出空字符串；" +
+            "⑤ 格式：选择题 {\"answer\":\"C\",\"conf\":0.92}（多选按字母升序拼，如 \"ACD\"）；" +
+            "判断题 {\"answer\":\"对\"} 或 {\"answer\":\"错\"}（同样带 conf）；" +
             "填空题 {\"answer\":[\"第一空\",\"第二空\"]}；" +
             "排序题 {\"answer\":\"BACD\"}（按正确顺序排字母）；" +
             "连线题 {\"pairs\":[{\"left\":\"左项\",\"right\":\"右项\"}]}；" +
@@ -109,6 +111,13 @@ internal object QuizPrompt {
      * 题目被做成图片时（超星听力作业常见：Section A/B 的题干和选项都是图片）走这条。
      * 一次问一整块：模型按题号顺序返回字母数组，程序负责按空位顺序填。
      */
+    /** 第一次把握不到 0.8 时，让它再想一遍（同一题、加一句提醒） */
+    fun retry(q: QuizQuestion, course: String = ""): String =
+        user(q, course) + "\n\n刚才那次你自己觉得不太确定（conf<0.8）。" +
+            "这次换个角度：先把题干的关键词圈出来，再逐项对照原文，重新判断一遍。" +
+            "仍然要带 conf，还是不确定就照实写低的 conf。" +
+            "输出格式不变，只输出 JSON。"
+
     fun vision(course: String, blankCount: Int, transcript: String, stem: String = ""): String {
         val sb = StringBuilder()
         if (course.isNotBlank()) sb.append("课程：").append(course).append('\n')

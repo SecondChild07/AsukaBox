@@ -35,7 +35,12 @@ internal object AiParse {
                     texts.add(p.optString("left") + "=" + p.optString("right"))
                 }
             }
-            QuizAnswer(letters.toString(), texts)
+            var conf = 1.0
+            val rawConf = obj.optDouble("conf", obj.optDouble("confidence", 1.0))
+            if (!rawConf.isNaN() && rawConf >= 0.0) conf = rawConf.coerceIn(0.0, 1.0)
+            // 有的模型给的是百分数
+            if (conf > 1.0) conf = 1.0
+            QuizAnswer(letters.toString(), texts, conf)
         } catch (e: Exception) {
             QuizAnswer()
         }

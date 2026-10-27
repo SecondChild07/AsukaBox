@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.AusKa.ToolBox.data.Course
-import com.AusKa.ToolBox.data.SectionTimes
+import com.AusKa.ToolBox.data.SectionTimesStore
 import com.AusKa.ToolBox.data.TermCalendar
 import com.AusKa.ToolBox.data.Timetable
 import com.AusKa.ToolBox.data.TimetableStore
@@ -344,7 +344,7 @@ private val DAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
 /** 兜底 12 节；学校排到 13、14 节时按数据往上顶（见 TimetableGrid 的 maxSection） */
 private const val MIN_SECTION_ROWS = 12
 private val CELL_HEIGHT: Dp = 56.dp
-private val SECTION_COL_WIDTH: Dp = 22.dp
+private val SECTION_COL_WIDTH: Dp = 58.dp
 
 @Composable
 private fun TimetableGrid(
@@ -354,6 +354,9 @@ private fun TimetableGrid(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalGlassPalette.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // 设置里改过上课时间后 revision 会 +1，读一下就能触发重组
+    SectionTimesStore.revision
     val courses = timetable.grid(week)
     // 有的学校一天排到 13、14 节，写死 12 会把最后几节画到容器外面裁掉
     val maxSection = maxOf(MIN_SECTION_ROWS, courses.maxOfOrNull { it.endSection } ?: MIN_SECTION_ROWS)
@@ -404,17 +407,31 @@ private fun TimetableGrid(
             Row(Modifier.fillMaxSize()) {
                 Column(Modifier.width(SECTION_COL_WIDTH)) {
                     for (s in 1..maxSection) {
+                        val clock = if (s <= SectionTimesStore.SECTIONS) {
+                            SectionTimesStore.start(context, s)
+                        } else {
+                            ""
+                        }
                         Box(
                             Modifier
                                 .height(CELL_HEIGHT)
                                 .fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(
-                                text = "$s",
-                                color = palette.textTertiary,
-                                fontSize = 10.sp,
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "$s",
+                                    color = palette.textTertiary,
+                                    fontSize = 10.sp,
+                                )
+                                if (clock.isNotEmpty()) {
+                                    Text(
+                                        text = clock,
+                                        color = palette.textTertiary.copy(alpha = 0.7f),
+                                        fontSize = 8.sp,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -507,6 +524,7 @@ private fun CourseLayer(
 
 @Composable
 private fun CourseDetailDialog(course: Course, week: Int, onDismiss: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val palette = LocalGlassPalette.current
     Dialog(
         onDismissRequest = onDismiss,
@@ -528,7 +546,7 @@ private fun CourseDetailDialog(course: Course, week: Int, onDismiss: () -> Unit)
                         "时间",
                         buildString {
                             append("周${DAY_LABELS.getOrElse(course.day - 1) { "?" }} 第 ${course.startSection}-${course.endSection} 节")
-                            val clock = SectionTimes.range(course.startSection, course.endSection)
+                            val clock = SectionTimesStore.range(ctx, course.startSection, course.endSection)
                             if (clock.isNotBlank()) append(" · $clock")
                         },
                     )

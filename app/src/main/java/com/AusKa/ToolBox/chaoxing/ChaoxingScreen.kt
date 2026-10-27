@@ -297,7 +297,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             AiEndpoints.baseFor(model) ?: AiClient.DEFAULT_BASE
         }
         // 现在只有一套模型。用户可能填的是纯文本模型，那就跳过看图的题，别硬问
-        val canSeeImage = AiSupport.looksVisionModel(model)
+        // 不按模型名预判能不能识图：先试，服务端明说不收图再记下来
+        var visionBroken = false
         solving = true
         solveNote = "读取题目…"
         webView.evaluateJavascript(QuizScripts.QUESTIONS) { raw ->
@@ -308,8 +309,14 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                 return@evaluateJavascript
             }
             val stats = intArrayOf(0, 0, list.size)
-            // 因「模型不识字图」被跳过的题数
+            // 因「接口不认图片」被跳过的题数
             var skipped = 0
+            // 本来就有答案、没动的题数
+            var already = 0
+            // 改掉之前错选的题数
+            var overwritten = 0
+            // 模型自己没把握、留给用户看的题数
+            var uncertain = 0
             // 所有线程共用：记下前几条失败原因，结束时直接显示，避免「0 题」但看不出为什么
             val errors = java.util.Collections.synchronizedList(mutableListOf<String>())
             val hasAudio = list.any { it.audio.isNotBlank() || it.kind == "listening" }
@@ -344,23 +351,60 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                 }
             }
 
-            fun applyAt(q: QuizQuestion, ans: QuizAnswer, at: Int) {
+            fun applyAt(q: QuizQuestion, ans: QuizAnswer, at: Int, prev: List<String>, prevFilled: Int) {
                 // 模型常把「对/错」或某个选项原文当答案给回来，先对齐成页面上的字母
                 val letters = AnswerResolver.letters(q, ans)
                 val texts = AnswerResolver.texts(q, ans)
                 if (letters.isNotEmpty()) {
-                    val js = if (q.kind == "sort") {
+                    val want = letters.uppercase().toList().sorted()
+                    val have = prev.map { it.uppercase() }.sorted()
+                    if (have.isNotEmpty() && have == want) {
+                        // 已经选的就是这个：再点一次反而会取消，直接算过
+                        already++
+                        stats[0]++
+                        stepRef?.invoke(at + 1)
+                        return
+                    }
+                    if (have.isNotEmpty() && ans.conf < 0.9) {
+                        // 已有别的答案、模型自己也不够确定：不擅自改，留给用户看
+                        uncertain++
+                        stats[1]++
+                        stepRef?.invoke(at + 1)
+                        return
+                    }
+                    val click = if (q.kind == "sort") {
                         QuizScripts.sortJs(q.index, letters)
                     } else {
                         QuizScripts.chooseJs(q.index, letters)
                     }
-                    webView.evaluateJavascript(js) { result ->
-                        if (unquote(result).contains("\"ok\":true")) stats[0]++ else stats[1]++
-                        stepRef?.invoke(at + 1)
+                    if (have.isEmpty()) {
+                        webView.evaluateJavascript(click) { result ->
+                            if (unquote(result).contains("\"ok\":true")) stats[0]++ else stats[1]++
+                            stepRef?.invoke(at + 1)
+                        }
+                    } else {
+                        // 先取消旧的选择再点新的：多选题不清会越点越多
+                        webView.evaluateJavascript(QuizExtra.clearJs(q.index)) {
+                            webView.evaluateJavascript(click) { result ->
+                                if (unquote(result).contains("\"ok\":true")) {
+                                    stats[0]++
+                                    overwritten++
+                                } else {
+                                    stats[1]++
+                                }
+                                stepRef?.invoke(at + 1)
+                            }
+                        }
                     }
                     return
                 }
                 if (texts.isNotEmpty()) {
+                    if (prevFilled > 0) {
+                        already++
+                        stats[0]++
+                        stepRef?.invoke(at + 1)
+                        return
+                    }
                     applyText(q, texts, at, 0)
                     return
                 }
@@ -395,26 +439,32 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     val firstError = synchronized(errors) { errors.firstOrNull().orEmpty() }
                     solveNote = "填了 " + stats[0] + "/" + stats[2] + " 题" +
                         (if (stats[1] > 0) "，有 " + stats[1] + " 题没拿到答案" else "") +
-                        (if (skipped > 0) "，跳过 " + skipped + " 道看图题（当前模型不能识图）" else "") +
+                        (if (already > 0) "，其中 " + already + " 题本来就有答案、没动" else "") +
+                        (if (overwritten > 0) "，改了 " + overwritten + " 道之前的错选" else "") +
+                        (if (uncertain > 0) "，" + uncertain + " 题没把握、留给你自己看" else "") +
+                        (if (skipped > 0) "，跳过 " + skipped + " 道看图题（当前接口不认图片）" else "") +
                         (if (stats[0] == 0 && firstError.isNotEmpty()) "。原因：" + AiSupport.friendly(firstError) else "") +
                         " · 没提交，自己看一眼再点提交"
                     if (stats[0] > 0) scanNote = "AI 已填 " + stats[0] + " 题（未提交）"
                 } else {
                     val q = list[at]
                     val picQuestion = q.images.isNotEmpty() && q.inputs > 0
-                    // 纯文本模型做不了看图的题：不硬问、不瞎填，直接跳过并记一笔
-                    if (picQuestion && !canSeeImage) {
+                    // 先试一次，服务端明说不认图片才记下来，后面的图片题就不再硬问了
+                    if (picQuestion && visionBroken) {
                         skipped++
-                        if (!visionWarn) visionWarn = true
                         solveNote = "第 " + (at + 1) + "/" + list.size + " 题 · 题面是图片，" +
-                            "当前模型是纯文本（" + model + "）· 跳过"
+                            "当前接口不认图片 · 跳过"
                         stepRef?.invoke(at + 1)
                     } else {
                         solveNote = "第 " + (at + 1) + "/" + list.size + " 题 · " + kindLabel(q.kind) +
-                            (if (picQuestion) " · 走视觉模型" else "")
+                            (if (picQuestion) " · 题面是图片" else "")
                         // webView.url 只能在主线程读 —— 放到后台线程里会直接崩（已实测踩到）
                         val pageUrl = webView.url.orEmpty()
-                        Thread {
+                        // 先读这一题现在的状态：已答且答案一样就不再动，避免把选好的取消掉
+                        webView.evaluateJavascript(QuizExtra.currentJs(q.index)) { state ->
+                            val prev = parseChecked(state)
+                            val prevFilled = parseFilled(state)
+                            Thread {
                         // 听力题先转写，再把原文塞进同一次提问里 —— 之前是「先问、答不出来才转写」，
                         // 结果模型随便回一个字母就跳过了转写，听力全错。
                         val hasAudio = q.audio.isNotBlank() || q.kind == "listening"
@@ -435,7 +485,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                             }
                             if (!reply.ok) synchronized(errors) { if (errors.size < 3) errors.add(reply.error) }
                             if (!reply.ok && AiSupport.meansNoVision(reply.error)) {
-                                // 模型名看着像视觉模型、实际服务端不认 —— 同样跳过，别把题空着乱填
+                                // 服务端明说不收图：记下来，后面的图片题直接跳过，别再浪费时间
+                                webView.post { visionBroken = true }
                                 webView.post {
                                     skipped++
                                     if (!visionWarn) visionWarn = true
@@ -444,16 +495,30 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 return@Thread
                             }
                         }
-                        val reply = AiClient.chatResult(
+                        // 一次不够：把握 < 0.8 再让它算一遍，取更确定的那个
+                        var reply = AiClient.chatResult(
                             apiBase,
                             key,
                             model,
                             QuizPrompt.user(q, courseContext(), heard),
                         )
                         if (!reply.ok) synchronized(errors) { if (errors.size < 3) errors.add(reply.error) }
-                        val ans = AiParse.answer(reply.text)
-                        webView.post { applyAt(q, ans, at) }
-                        }.start()
+                        var ans = AiParse.answer(reply.text)
+                        if (ans.conf < 0.8) {
+                            val second = AiClient.chatResult(
+                                apiBase,
+                                key,
+                                model,
+                                QuizPrompt.retry(q, courseContext()),
+                            )
+                            if (!second.ok) synchronized(errors) { if (errors.size < 3) errors.add(second.error) }
+                            val ans2 = AiParse.answer(second.text)
+                            if (ans2.conf >= ans.conf) ans = ans2
+                        }
+                        val finalAns = ans
+                        webView.post { applyAt(q, finalAns, at, prev, prevFilled) }
+                            }.start()
+                        }
                     }
                 }
             }
@@ -1582,3 +1647,16 @@ private fun timeLabel(at: Long): String {
         cal.get(java.util.Calendar.MINUTE),
     )
 }
+
+/** 读 QuizExtra.currentJs 的结果：已选中的字母 */
+private fun parseChecked(raw: String): List<String> = runCatching {
+    val json = org.json.JSONObject(raw.trim().removeSurrounding("\"").replace("\\\"", "\""))
+    val arr = json.optJSONArray("checked") ?: return emptyList()
+    (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
+}.getOrDefault(emptyList())
+
+/** 读 QuizExtra.currentJs 的结果：这道题已经填了几个空 */
+private fun parseFilled(raw: String): Int = runCatching {
+    org.json.JSONObject(raw.trim().removeSurrounding("\"").replace("\\\"", "\""))
+        .optInt("filled", 0)
+}.getOrDefault(0)

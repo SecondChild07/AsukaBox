@@ -33,10 +33,6 @@ class UrlStore(context: Context) {
             }.apply()
         }
 
-    var autoCheckin: Boolean
-        get() = prefs.getBoolean(KEY_AUTO, false)
-        set(value) = prefs.edit().putBoolean(KEY_AUTO, value).apply()
-
     fun clear() = prefs.edit().remove(KEY_URL).apply()
 
     private fun looksLikeUrl(s: String): Boolean =
@@ -46,6 +42,6 @@ class UrlStore(context: Context) {
 
     private companion object {
         const val KEY_URL = "checkin_url"
-        const val KEY_AUTO = "auto_checkin"
+
     }
 }
