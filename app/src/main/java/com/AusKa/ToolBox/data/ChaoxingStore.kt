@@ -97,6 +97,14 @@ internal object ChaoxingStore {
         e.apply()
     }
 
+    /** 题库相关的小设置（开关、本地题库、在线地址），给 QuizBank 用 */
+    fun prefsGet(context: Context, key: String): String? =
+        prefs(context).getString(key, null)
+
+    fun prefsPut(context: Context, key: String, value: String) {
+        if (value.isEmpty()) prefs(context).edit().remove(key).apply()
+        else prefs(context).edit().putString(key, value).apply()
+    }
     /** 供应商列表（名字 + 地址 + 模型），明文存，不含 Key */
     fun providersJson(context: Context): String =
         prefs(context).getString(K_PROVIDERS, "").orEmpty()

@@ -317,6 +317,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             var overwritten = 0
             // 模型自己没把握、留给用户看的题数
             var uncertain = 0
+            // 题库直接命中的题数（命中就不问模型）
+            var fromBank = 0
             // 所有线程共用：记下前几条失败原因，结束时直接显示，避免「0 题」但看不出为什么
             val errors = java.util.Collections.synchronizedList(mutableListOf<String>())
             val hasAudio = list.any { it.audio.isNotBlank() || it.kind == "listening" }
@@ -480,6 +482,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         (if (already > 0) "，其中 " + already + " 题本来就有答案、没动" else "") +
                         (if (overwritten > 0) "，改了 " + overwritten + " 道之前的错选" else "") +
                         (if (uncertain > 0) "，" + uncertain + " 题没把握、留给你自己看" else "") +
+                        (if (fromBank > 0) "，其中 " + fromBank + " 题来自题库" else "") +
                         (if (skipped > 0) "，跳过 " + skipped + " 道看图题（当前接口不认图片）" else "") +
                         (if (stats[0] == 0 && firstError.isNotEmpty()) "。原因：" + AiSupport.friendly(firstError) else "") +
                         " · 没提交，自己看一眼再点提交"
@@ -511,6 +514,23 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         val hasAudio = q.audio.isNotBlank() || q.kind == "listening"
                         val heard = if (hasAudio) transcribeAudio(q.audio, pageUrl, apiBase, key) else ""
                         // 题面是图片的（Section A/B 那种）：一次问整块，按空位顺序填字母
+                        // 题库优先：命中的话直接用，不问模型（图片题先跳过题库，题面在图里对不上文本）
+                        if (!picQuestion) {
+                            val hit = runCatching { QuizBank.lookup(context, q) }.getOrNull()
+                            if (hit != null) {
+                                val letters = hit.answer.replace(Regex("[^A-Ha-h]"), "")
+                                val ans = if (letters.isNotEmpty() && q.options.isNotEmpty()) {
+                                    QuizAnswer(letters = letters.uppercase(), conf = 1.0)
+                                } else {
+                                    QuizAnswer(texts = listOf(hit.answer), conf = 1.0)
+                                }
+                                webView.post {
+                                    fromBank++
+                                    applyAt(q, ans, at, prev, prevFilled)
+                                }
+                                return@Thread
+                            }
+                        }
                         if (picQuestion) {
                             // 题面图片挂在超星 CDN 上，要带会话才下得下来；
                             // 直接把这个地址丢给模型，模型那边是抓不到的（会回 4xx），所以先下成 base64 再发。

@@ -83,6 +83,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var modelIds by remember { mutableStateOf(listOf<String>()) }
     var modelFetchNote by remember { mutableStateOf("") }
     var fetchingModels by remember { mutableStateOf(false) }
+    // 题库：默认开，先查题库再问模型
+    var bankOn by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.QuizBank.enabled(app)) }
+    var bankCount by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.QuizBank.localCount(app)) }
+    var editBank by remember { mutableStateOf(false) }
+    var bankDraft by remember { mutableStateOf("") }
+    var bankNote by remember { mutableStateOf("") }
+    var bankUrlDraft by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.QuizBank.endpoint(app)) }
     // 上课时间：12 节的开始/结束，改完立刻落盘并刷新课表
     var editTimes by remember { mutableStateOf(false) }
     var timeDraft by remember { mutableStateOf(listOf<Pair<String, String>>()) }
@@ -371,6 +378,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             Text("高级：换接口地址和模型名", fontSize = 12.sp)
                         }
                     }
+                    TextButton(onClick = {
+                        bankDraft = ""
+                        bankNote = ""
+                        bankUrlDraft = com.AusKa.ToolBox.chaoxing.QuizBank.endpoint(app)
+                        editBank = true
+                    }) { Text("题库（先查题库，再问模型）", fontSize = 12.sp) }
                 }
             },
             confirmButton = {
@@ -401,6 +414,69 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         )
     }
 
+    if (editBank) {
+        AlertDialog(
+            onDismissRequest = { editBank = false },
+            title = { Text("题库") },
+            text = {
+                Column(modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("优先用题库", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        androidx.compose.material3.Switch(
+                            checked = bankOn,
+                            onCheckedChange = {
+                                bankOn = it
+                                com.AusKa.ToolBox.chaoxing.QuizBank.setEnabled(app, it)
+                            },
+                        )
+                    }
+                    Text(
+                        "本地已有 " + bankCount + " 道题；命中的不会再问模型",
+                        fontSize = 11.sp,
+                        color = palette.textTertiary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = bankDraft,
+                        onValueChange = { bankDraft = it },
+                        label = { Text("粘贴题库 JSON", fontSize = 12.sp) },
+                        placeholder = { Text("[{\"question\":\"题干\",\"answer\":\"C\"}]", fontSize = 11.sp) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+                    )
+                    Row {
+                        TextButton(onClick = {
+                            val res = com.AusKa.ToolBox.chaoxing.QuizBank.importLocal(app, bankDraft)
+                            bankNote = res.second
+                            bankCount = com.AusKa.ToolBox.chaoxing.QuizBank.localCount(app)
+                            if (res.first > 0) bankDraft = ""
+                        }) { Text("导入", fontSize = 12.sp) }
+                        TextButton(onClick = {
+                            bankDraft = ""
+                            com.AusKa.ToolBox.chaoxing.QuizBank.importLocal(app, "{\"x\":\"\"}")
+                            bankNote = "本地题库已清空"
+                            bankCount = 0
+                        }) { Text("清空题库", fontSize = 12.sp) }
+                    }
+                    OutlinedTextField(
+                        value = bankUrlDraft,
+                        onValueChange = { bankUrlDraft = it },
+                        label = { Text("在线题库地址（可选，{q} 占位）", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (bankNote.isNotEmpty()) {
+                        Text(bankNote, fontSize = 11.sp, color = palette.success)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    com.AusKa.ToolBox.chaoxing.QuizBank.setEndpoint(app, bankUrlDraft)
+                    editBank = false
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { editBank = false }) { Text("关闭") } },
+        )
+    }
     val target = editingProvider
     if (target != null) {
         AlertDialog(
