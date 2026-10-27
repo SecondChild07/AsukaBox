@@ -221,6 +221,41 @@ internal object AiClient {
         }
     }
 
+    /**
+     * 拉这个 key 能用的模型名（GET {base}/models）。
+     *
+     * 各家把「显示名」和「接口里的 model 字段」分得很开，比如界面上叫
+     * 「DeepSeek V4.1 Flash」，接口里要写 deepseek-flash。直接问服务商要列表
+     * 就不会猜错——这比在本地维护一张对照表靠谱。
+     */
+    fun listModels(apiBase: String, key: String): Pair<List<String>, String> {
+        if (key.isBlank()) return emptyList<String>() to "还没填 Key"
+        val url = apiBase.trimEnd('/') + "/models"
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 12_000
+                readTimeout = 20_000
+                setRequestProperty("Authorization", "Bearer $key")
+                setRequestProperty("Accept", "application/json")
+            }
+            val code = conn.responseCode
+            val text = if (code in 200..299) read(conn.inputStream) else read(conn.errorStream ?: conn.inputStream)
+            if (code !in 200..299) return emptyList<String>() to ("HTTP " + code + " " + text.take(200))
+            val arr = JSONObject(text).optJSONArray("data") ?: JSONArray()
+            val ids = ArrayList<String>()
+            for (i in 0 until arr.length()) {
+                val id = arr.optJSONObject(i)?.optString("id").orEmpty()
+                if (id.isNotBlank()) ids.add(id)
+            }
+            ids to ""
+        } catch (e: Exception) {
+            emptyList<String>() to (e.javaClass.simpleName + " " + (e.message ?: ""))
+        } finally {
+            conn?.disconnect()
+        }
+    }
     private fun post(url: String, key: String, payload: ByteArray, contentType: String): String =
         postDetailed(url, key, payload, contentType).first
 

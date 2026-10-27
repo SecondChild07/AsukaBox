@@ -79,6 +79,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var pvName by remember { mutableStateOf("") }
     var pvBase by remember { mutableStateOf("") }
     var pvModel by remember { mutableStateOf("") }
+    // 从服务商拉到的模型名列表（省得猜 deepseek-flash 还是 deepseek-chat）
+    var modelIds by remember { mutableStateOf(listOf<String>()) }
+    var modelFetchNote by remember { mutableStateOf("") }
+    var fetchingModels by remember { mutableStateOf(false) }
     // 上课时间：12 节的开始/结束，改完立刻落盘并刷新课表
     var editTimes by remember { mutableStateOf(false) }
     var timeDraft by remember { mutableStateOf(listOf<Pair<String, String>>()) }
@@ -295,6 +299,50 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     )
 
                     if (showAdvanced) {
+                        TextButton(
+                            enabled = !fetchingModels,
+                            onClick = {
+                                fetchingModels = true
+                                modelFetchNote = ""
+                                val base = baseDraft.ifBlank {
+                                    AiEndpoints.baseFor(modelDraft) ?: "https://api.deepseek.com/v1"
+                                }
+                                val key = aiDraft.ifBlank { aiKey }
+                                Thread {
+                                    val (ids, err) = com.AusKa.ToolBox.chaoxing.AiClient.listModels(base, key)
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        fetchingModels = false
+                                        modelIds = ids.take(30)
+                                        modelFetchNote = if (ids.isEmpty()) {
+                                            "没拉到列表：" + (err.ifBlank { "服务商没返回 data[].id" })
+                                        } else {
+                                            "这个 key 能用 " + ids.size + " 个模型，点一下就用"
+                                        }
+                                    }
+                                }.start()
+                            },
+                        ) { Text(if (fetchingModels) "拉取中…" else "从服务商拉取模型列表", fontSize = 12.sp) }
+                        if (modelFetchNote.isNotEmpty()) {
+                            Text(modelFetchNote, fontSize = 11.sp, color = palette.textTertiary)
+                        }
+                        if (modelIds.isNotEmpty()) {
+                            Column(modifier = Modifier.heightIn(max = 96.dp).verticalScroll(rememberScrollState())) {
+                                modelIds.forEach { id ->
+                                    Text(
+                                        text = if (id == modelDraft) "✓ " + id else id,
+                                        fontSize = 12.sp,
+                                        color = if (id == modelDraft) palette.success else palette.textPrimary,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                modelDraft = id
+                                                AiEndpoints.baseFor(id)?.let { b -> baseDraft = b }
+                                            }
+                                            .padding(vertical = 5.dp),
+                                    )
+                                }
+                            }
+                        }
                         AiEndpoints.hintFor(modelDraft)?.let { hint ->
                             Spacer(Modifier.height(4.dp))
                             Text(
