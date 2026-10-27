@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
@@ -36,6 +37,8 @@ import com.AusKa.ToolBox.BuildConfig
 import com.AusKa.ToolBox.data.AmapKeyStore
 import com.AusKa.ToolBox.data.Author
 import com.AusKa.ToolBox.chaoxing.AiEndpoints
+import com.AusKa.ToolBox.chaoxing.AiProvider
+import com.AusKa.ToolBox.chaoxing.AiProviderStore
 import com.AusKa.ToolBox.data.ChaoxingStore
 import com.AusKa.ToolBox.data.SectionTimesStore
 import com.AusKa.ToolBox.data.TimetableStore
@@ -70,6 +73,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var modelDraft by remember { mutableStateOf("") }
     var baseDraft by remember { mutableStateOf("") }
     var showAdvanced by remember { mutableStateOf(false) }
+    // 供应商列表（内置的那几条 + 自己加的），点一下就切过去
+    var providers by remember { mutableStateOf(AiProviderStore.load(app)) }
+    var editingProvider by remember { mutableStateOf<AiProvider?>(null) }
+    var pvName by remember { mutableStateOf("") }
+    var pvBase by remember { mutableStateOf("") }
+    var pvModel by remember { mutableStateOf("") }
     // 上课时间：12 节的开始/结束，改完立刻落盘并刷新课表
     var editTimes by remember { mutableStateOf(false) }
     var timeDraft by remember { mutableStateOf(listOf<Pair<String, String>>()) }
@@ -218,7 +227,54 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         fontSize = 13.sp,
                     )
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text("供应商", fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text(
+                        "点一下就切过去（地址和模型自动填好）；下面还能自己加中转站或本地模型",
+                        fontSize = 11.sp,
+                        color = palette.textTertiary,
+                    )
+                    Column(modifier = Modifier.heightIn(max = 132.dp).verticalScroll(rememberScrollState())) {
+                    providers.forEach { p ->
+                        val active = p.base == baseDraft && p.model == modelDraft
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    baseDraft = p.base
+                                    modelDraft = p.model
+                                    showAdvanced = true
+                                }
+                                .padding(vertical = 7.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(p.name, fontSize = 13.sp, color = palette.textPrimary)
+                                Text(
+                                    p.model + " · " + p.base.removePrefix("https://").take(38),
+                                    fontSize = 10.sp,
+                                    color = palette.textTertiary,
+                                )
+                            }
+                            if (active) {
+                                Text("当前", fontSize = 11.sp, color = palette.success)
+                            } else {
+                                TextButton(onClick = {
+                                    providers = providers.filterNot { it.id == p.id }
+                                    AiProviderStore.save(app, providers)
+                                }) { Text("删", fontSize = 11.sp) }
+                            }
+                        }
+                    }
+                    TextButton(onClick = {
+                        pvName = ""
+                        pvBase = ""
+                        pvModel = ""
+                        editingProvider = AiProvider("custom-" + System.currentTimeMillis(), "", "", "")
+                    }) { Text("＋ 添加供应商", fontSize = 12.sp) }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
                     AiKeyFields(
                         keyValue = aiDraft,
                         onKey = { aiDraft = it },
@@ -297,6 +353,61 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         )
     }
 
+    val target = editingProvider
+    if (target != null) {
+        AlertDialog(
+            onDismissRequest = { editingProvider = null },
+            title = { Text("添加供应商") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = pvName,
+                        onValueChange = { pvName = it },
+                        singleLine = true,
+                        label = { Text("名字", fontSize = 12.sp) },
+                        placeholder = { Text("比如 中转站 / Ollama", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = pvBase,
+                        onValueChange = { pvBase = it },
+                        singleLine = true,
+                        label = { Text("接口地址", fontSize = 12.sp) },
+                        placeholder = { Text("https://…/v1", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = pvModel,
+                        onValueChange = { pvModel = it },
+                        singleLine = true,
+                        label = { Text("模型名", fontSize = 12.sp) },
+                        placeholder = { Text("deepseek-chat / qwen2.5:7b", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = pvName.trim().ifBlank { pvModel.trim() }
+                    val base = pvBase.trim()
+                    val model = pvModel.trim()
+                    if (base.startsWith("http") && model.isNotEmpty()) {
+                        providers = providers + AiProvider(target.id, name, base, model)
+                        AiProviderStore.save(app, providers)
+                        baseDraft = base
+                        modelDraft = model
+                        showAdvanced = true
+                    }
+                    editingProvider = null
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingProvider = null }) { Text("取消") }
+            },
+        )
+    }
     if (editTimes) {
         AlertDialog(
             onDismissRequest = { editTimes = false },

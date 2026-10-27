@@ -20,6 +20,7 @@ internal object ChaoxingStore {
     private const val K_AI_KEY = "ai_key"
     private const val K_AI_MODEL = "ai_model"
     private const val K_AI_BASE = "ai_base"
+    private const val K_PROVIDERS = "ai_providers"
     // 图片题（听力作业把题面做成图）单独一套配置，可以和第二套指向不同服务商
     private const val K_SUBMIT = "submit_mode"
     private const val K_TASKS = "tasks_json"
@@ -94,6 +95,14 @@ internal object ChaoxingStore {
         val e = prefs(context).edit()
         if (b.isEmpty()) e.remove(K_AI_BASE) else e.putString(K_AI_BASE, b)
         e.apply()
+    }
+
+    /** 供应商列表（名字 + 地址 + 模型），明文存，不含 Key */
+    fun providersJson(context: Context): String =
+        prefs(context).getString(K_PROVIDERS, "").orEmpty()
+
+    fun setProvidersJson(context: Context, raw: String) {
+        prefs(context).edit().putString(K_PROVIDERS, raw).apply()
     }
 
     // ---------------------------------------------------------------- 上次扫到的清单

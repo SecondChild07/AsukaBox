@@ -328,6 +328,44 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
 
             var stepRef: ((Int) -> Unit)? = null
 
+            // 并发但不影响正确率：只提前问后面两道（顺序、回填、核验都不变），
+            // 音频题和图片题不预取 —— 它们要么要转写、要么一次问一整块，提前问会多花钱。
+            val prefetch = java.util.concurrent.ConcurrentHashMap<Int, QuizAnswer>()
+            val prefetchBusy = java.util.Collections.newSetFromMap(
+                java.util.concurrent.ConcurrentHashMap<Int, Boolean>(),
+            )
+
+            fun prefetchAt(at2: Int) {
+                if (at2 >= list.size) return
+                val q2 = list[at2]
+                if (q2.images.isNotEmpty() && q2.inputs > 0) return
+                if (q2.audio.isNotBlank() || q2.kind == "listening") return
+                if (prefetch.containsKey(at2) || !prefetchBusy.add(at2)) return
+                Thread {
+                    runCatching {
+                        var r = AiClient.chatResult(
+                            apiBase,
+                            key,
+                            model,
+                            QuizPrompt.user(q2, courseContext()),
+                        )
+                        var a = AiParse.answer(r.text)
+                        if (a.conf < 0.8) {
+                            val r2 = AiClient.chatResult(
+                                apiBase,
+                                key,
+                                model,
+                                QuizPrompt.retry(q2, courseContext()),
+                            )
+                            val a2 = AiParse.answer(r2.text)
+                            if (a2.conf >= a.conf) a = a2
+                        }
+                        if (a.letters.isNotEmpty() || a.texts.isNotEmpty()) prefetch[at2] = a
+                    }
+                    prefetchBusy.remove(at2)
+                }.start()
+            }
+
             fun applyText(q: QuizQuestion, parts: List<String>, at: Int, slot: Int) {
                 if (slot >= parts.size) {
                     stats[0]++
@@ -464,6 +502,9 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         webView.evaluateJavascript(QuizExtra.currentJs(q.index)) { state ->
                             val prev = parseChecked(state)
                             val prevFilled = parseFilled(state)
+                        // 顺手把后面两道提前问上（顺序和核验都不变）
+                        prefetchAt(at + 1)
+                        prefetchAt(at + 2)
                             Thread {
                         // 听力题先转写，再把原文塞进同一次提问里 —— 之前是「先问、答不出来才转写」，
                         // 结果模型随便回一个字母就跳过了转写，听力全错。
@@ -494,6 +535,11 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 }
                                 return@Thread
                             }
+                        }
+                        val ready = if (!hasAudio) prefetch[at] else null
+                        if (ready != null) {
+                            webView.post { applyAt(q, ready, at, prev, prevFilled) }
+                            return@Thread
                         }
                         // 一次不够：把握 < 0.8 再让它算一遍，取更确定的那个
                         var reply = AiClient.chatResult(
@@ -834,7 +880,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                 // 顶部让出工具栏和地址行的高度，否则页面的标题栏和提交按钮会被压住
                 Modifier
                     .fillMaxSize()
-                    .padding(start = 14.dp, end = 14.dp, top = 108.dp, bottom = 8.dp)
+                    .padding(start = 14.dp, end = 14.dp, top = 108.dp, bottom = 46.dp)
             } else {
                 Modifier.size(1.dp)
             },
@@ -903,6 +949,9 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     onProbe = { runProbe() },
                     onScan = { scanPageOnly() },
                     onSolve = { solvePage() },
+                    onPrev = { webView.evaluateJavascript("window.scrollBy(0,-620)", null) },
+                    onNext = { webView.evaluateJavascript("window.scrollBy(0,620)", null) },
+                    onList = { page = PAGE_HOME },
                     onOpenFrame = { webView.loadUrl(it) },
                     onOpenUrl = { if (urlText.isNotBlank()) webView.loadUrl(urlText.trim()) },
                 )
@@ -912,7 +961,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         if (visionWarn) {
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = { visionWarn = false },
-                title = { Text("当前模型是纯文本模型") },
+                title = { Text("这个接口不认图片") },
                 text = {
                     Text(
                         "这页的题面是图片，纯文本模型读不了图，所以这几道跳过了、没有乱填。\n\n" +
@@ -1299,6 +1348,9 @@ private fun WebPane(
     onProbe: () -> Unit,
     onScan: () -> Unit,
     onSolve: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onList: () -> Unit,
     onOpenFrame: (String) -> Unit,
     onOpenUrl: () -> Unit,
 ) {
@@ -1442,7 +1494,33 @@ private fun WebPane(
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
+        // 底部固定操作条：翻题不用满屏找按钮
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            GlassButton(
+                text = "上一题",
+                onClick = onPrev,
+                modifier = Modifier.weight(1f),
+                height = 34.dp,
+                kind = GlassButtonKind.Ghost,
+            )
+            Spacer(Modifier.width(6.dp))
+            GlassButton(
+                text = "下一题",
+                onClick = onNext,
+                modifier = Modifier.weight(1f),
+                height = 34.dp,
+                kind = GlassButtonKind.Ghost,
+            )
+            Spacer(Modifier.width(6.dp))
+            GlassButton(
+                text = "回清单",
+                onClick = onList,
+                modifier = Modifier.weight(1f),
+                height = 34.dp,
+                kind = GlassButtonKind.Ghost,
+            )
+        }
     }
 }
 
