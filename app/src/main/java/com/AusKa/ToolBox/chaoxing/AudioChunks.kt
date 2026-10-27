@@ -46,6 +46,35 @@ internal object AudioChunks {
         }
     }.getOrDefault(emptyList())
 
+    /** 把 WAV/PCM 片段转成 16 kHz 单声道 float 采样（本地 ASR 需要这个格式） */
+    fun toMono16k(pcm: ByteArray, srcRate: Int, channels: Int): FloatArray {
+        if (pcm.isEmpty() || srcRate <= 0 || channels <= 0) return FloatArray(0)
+        val frames = pcm.size / (2 * channels)
+        val mono = FloatArray(frames)
+        var i = 0
+        for (f in 0 until frames) {
+            var sum = 0f
+            for (c in 0 until channels) {
+                val lo = pcm[i].toInt() and 0xFF
+                val hi = pcm[i + 1].toInt()
+                sum += ((hi shl 8) or lo).toShort().toFloat()
+                i += 2
+            }
+            mono[f] = sum / channels / 32768f
+        }
+        if (srcRate == 16000) return mono
+        val outLen = (frames.toLong() * 16000 / srcRate).toInt().coerceAtLeast(1)
+        val out = FloatArray(outLen)
+        val step = srcRate.toDouble() / 16000.0
+        for (n in 0 until outLen) {
+            val pos = n * step
+            val i0 = pos.toInt().coerceIn(0, frames - 1)
+            val i1 = (i0 + 1).coerceAtMost(frames - 1)
+            val frac = (pos - i0).toFloat()
+            out[n] = mono[i0] * (1 - frac) + mono[i1] * frac
+        }
+        return out
+    }
     private class Pcm(val data: ByteArray, val sampleRate: Int, val channels: Int)
 
     private fun decodeToPcm(file: File): Pcm? {
