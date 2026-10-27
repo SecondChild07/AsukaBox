@@ -289,7 +289,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }) { Text("＋ 添加供应商", fontSize = 12.sp) }
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    Text("文本 / 识图（答题用）", fontSize = 13.sp)
+                    Spacer(Modifier.height(4.dp))
                     AiKeyFields(
                         keyValue = aiDraft,
                         onKey = { aiDraft = it },
@@ -382,18 +383,46 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             Text("高级：换接口地址和模型名", fontSize = 12.sp)
                         }
                     }
+                    Spacer(Modifier.height(10.dp))
+                    Text("听力转写（可选）", fontSize = 13.sp)
+                    Text(
+                        "听力题要先把音频转成文字。留空就用上面这套；上面如果是 DeepSeek 这种没有转写接口的，就填一个能转写的服务（硅基流动 / OpenAI / Groq）。",
+                        fontSize = 11.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = sttBaseDraft,
+                        onValueChange = { sttBaseDraft = it },
+                        label = { Text("转写接口地址") },
+                        placeholder = { Text("https://api.siliconflow.cn/v1") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = sttKeyDraft,
+                        onValueChange = { sttKeyDraft = it },
+                        label = { Text("转写 Key") },
+                        placeholder = { Text("留空沿用上面的 Key") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = sttModelDraft,
+                        onValueChange = { sttModelDraft = it },
+                        label = { Text("转写模型名") },
+                        placeholder = { Text("FunAudioLLM/SenseVoiceSmall / whisper-1") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     TextButton(onClick = {
                         bankDraft = ""
                         bankNote = ""
                         bankUrlDraft = com.AusKa.ToolBox.chaoxing.QuizBank.endpoint(app)
                         editBank = true
                     }) { Text("题库（先查题库，再问模型）", fontSize = 12.sp) }
-                    TextButton(onClick = {
-                        sttBaseDraft = ChaoxingStore.sttBase(app)
-                        sttKeyDraft = ""
-                        sttModelDraft = ChaoxingStore.sttModel(app)
-                        editStt = true
-                    }) { Text("语音转写（听力用，可选）", fontSize = 12.sp) }
+
                 }
             },
             confirmButton = {
@@ -411,6 +440,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         ChaoxingStore.setAiBase(app, baseDraft.trim())
                         aiBase = baseDraft.trim()
                     }
+                    // 听力转写：单独一套，留空表示沿用上面那套
+                    ChaoxingStore.setSttBase(app, sttBaseDraft.trim())
+                    if (sttKeyDraft.isNotBlank()) ChaoxingStore.setSttKey(app, sttKeyDraft.trim())
+                    ChaoxingStore.setSttModel(app, sttModelDraft.trim())
                     editAi = false
                 }) { Text("保存") }
             },
