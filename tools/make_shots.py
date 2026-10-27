@@ -1,10 +1,13 @@
 """把两张手机截图拼成 README 用的 docs/shots.png。
 
 用法：
-    python tools/make_shots.py 首页.png "AI 答题设置.png"
+    python tools/make_shots.py 首页.png "AI 答题设置.png" [输出路径]
 
 两张图按 1:1 并排，底色 #F7F8FC，圆角 + 淡阴影。截图请用同一分钟内拍的，
 否则状态栏时间会不一样（这个脚本不会修时间）。
+
+输出文件名带上版本号（docs/shots-2.1.png 这种）是为了绕开 GitHub 的图片缓存：
+README 里的 <img src> 一换路径，浏览器和 CDN 才会去拉新图。
 """
 import sys
 
@@ -38,6 +41,7 @@ def main():
     if len(sys.argv) < 3:
         print(__doc__)
         return 1
+    out = sys.argv[3] if len(sys.argv) > 3 else "docs/shots.png"
     left = phone(sys.argv[1], PHONE_W)
     right = phone(sys.argv[2], PHONE_W)
 
@@ -57,8 +61,8 @@ def main():
     for (x, y), im in zip(positions, (left, right)):
         canvas.paste(im, (x, y), im)
 
-    canvas.save("docs/shots.png", optimize=True)
-    print("docs/shots.png", canvas.size)
+    canvas.save(out, optimize=True)
+    print(out, canvas.size)
     return 0
 
 

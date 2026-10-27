@@ -6,7 +6,7 @@
 
 纯 Compose 手写，Liquid Glass 外观，没引第三方 UI 库。
 
-<img src="docs/shots.png" width="100%">
+<img src="docs/shots-2.1.png" width="100%">
 
 ## 下载
 
