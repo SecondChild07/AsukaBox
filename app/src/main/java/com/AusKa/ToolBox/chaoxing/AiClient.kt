@@ -191,7 +191,7 @@ internal object AiClient {
     }
 
     /** 听力转写：把音频字节发给 /audio/transcriptions（走 whisper 兼容接口） */
-    fun transcribe(apiBase: String, key: String, audio: ByteArray, fileName: String = "a.mp3"): String {
+    fun transcribe(apiBase: String, key: String, audio: ByteArray, model: String = "whisper-1", fileName: String = "a.mp3"): String {
         if (key.isBlank() || audio.isEmpty()) return ""
         val boundary = "----asuka" + UUID.randomUUID().toString().replace("-", "")
         val out = ByteArrayOutputStream(audio.size + 1024)

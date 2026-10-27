@@ -474,7 +474,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         // 听力题先转写，再把原文塞进同一次提问里 —— 之前是「先问、答不出来才转写」，
                         // 结果模型随便回一个字母就跳过了转写，听力全错。
                         val hasAudio = q.audio.isNotBlank() || q.kind == "listening"
-                        val heard = if (hasAudio) transcribeAudio(q.audio, pageUrl, apiBase, key) else ""
+                        val heard = if (hasAudio) transcribeAudio(q.audio, pageUrl, apiBase, key, ChaoxingStore.sttModel(context)) else ""
                         if (hasAudio && heard.isBlank()) webView.post { noTranscript++ }
                         // 题面是图片的（Section A/B 那种）：一次问整块，按空位顺序填字母
                         // 题库优先：命中的话直接用，不问模型（图片题先跳过题库，题面在图里对不上文本）
@@ -549,6 +549,25 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                             if (!second.ok) synchronized(errors) { if (errors.size < 3) errors.add(second.error) }
                             val ans2 = AiParse.answer(second.text)
                             if (ans2.conf >= ans.conf) ans = ans2
+                        }
+                        // 两次一致才落笔：模型自己都不稳的题先留空，别把可能对的改成错的
+                        if (!hasAudio && ans.letters.isNotEmpty() && ans.conf < 0.95) {
+                            val third = AiClient.chatResult(
+                                apiBase,
+                                key,
+                                model,
+                                QuizPrompt.retry(q, courseContext()),
+                            )
+                            val ans3 = AiParse.answer(third.text)
+                            if (ans3.letters == ans.letters) {
+                                ans = ans.copy(conf = 0.97)
+                            } else if (ans.conf < 0.9) {
+                                webView.post {
+                                    uncertain++
+                                    stepRef?.invoke(at + 1)
+                                }
+                                return@Thread
+                            }
                         }
                         val finalAns = ans
                         webView.post { applyAt(q, finalAns, at, prev, prevFilled) }
@@ -1608,7 +1627,7 @@ private fun cookieFor(url: String): String =
  *  - 普通 URL（老页面直接放 audio）。
  * 拿到字节后逐段转写，拼成一段原文交给模型。
  */
-private fun transcribeAudio(raw: String, base: String, apiBase: String, key: String): String {
+private fun transcribeAudio(raw: String, base: String, apiBase: String, key: String, sttModel: String = ""): String {
     // 同一个作业里几个填空块共用同一批音频，不缓存的话每块都会重下一遍（8 段 mp3 × 3 块）
     synchronized(audioCache) { audioCache[raw] }?.let { return it }
     val urls = if (raw.startsWith("object:")) {
@@ -1624,7 +1643,7 @@ private fun transcribeAudio(raw: String, base: String, apiBase: String, key: Str
     urls.forEach { u ->
         val bytes = HttpText.bytes(u, cookieFor(u), base)
         if (bytes.isEmpty()) return@forEach
-        val text = AiClient.transcribe(apiBase, key, bytes)
+        val text = AiClient.transcribe(apiBase, key, bytes, sttModel.ifBlank { "whisper-1" })
         if (text.isNotBlank()) {
             if (sb.isNotEmpty()) sb.append('\n')
             sb.append(text)

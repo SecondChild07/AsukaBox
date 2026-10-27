@@ -19,6 +19,7 @@ internal object ChaoxingStore {
     private const val K_COOKIE_AT = "cookie_at"
     private const val K_AI_KEY = "ai_key"
     private const val K_AI_MODEL = "ai_model"
+    private const val K_STT_MODEL = "ai_stt_model"
     private const val K_AI_BASE = "ai_base"
     private const val K_PROVIDERS = "ai_providers"
     // 图片题（听力作业把题面做成图）单独一套配置，可以和第二套指向不同服务商
@@ -73,6 +74,15 @@ internal object ChaoxingStore {
         val k = value.trim()
         val e = prefs(context).edit()
         if (k.isEmpty()) e.remove(K_AI_KEY) else e.putString(K_AI_KEY, SecretBox.seal(k))
+        e.apply()
+    }
+
+    fun sttModel(context: Context): String =
+        prefs(context).getString(K_STT_MODEL, "").orEmpty()
+
+    fun setSttModel(context: Context, m: String) {
+        val e = prefs(context).edit()
+        if (m.isEmpty()) e.remove(K_STT_MODEL) else e.putString(K_STT_MODEL, m)
         e.apply()
     }
 
