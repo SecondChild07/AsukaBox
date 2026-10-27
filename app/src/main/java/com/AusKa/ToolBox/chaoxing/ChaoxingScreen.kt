@@ -512,12 +512,23 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         val heard = if (hasAudio) transcribeAudio(q.audio, pageUrl, apiBase, key) else ""
                         // 题面是图片的（Section A/B 那种）：一次问整块，按空位顺序填字母
                         if (picQuestion) {
+                            // 题面图片挂在超星 CDN 上，要带会话才下得下来；
+                            // 直接把这个地址丢给模型，模型那边是抓不到的（会回 4xx），所以先下成 base64 再发。
+                            val inline = q.images.mapNotNull { u ->
+                                val bytes = HttpText.bytes(u, cookieFor(u), "https://mooc1.chaoxing.com/")
+                                if (bytes.isEmpty()) {
+                                    null
+                                } else {
+                                    "data:image/png;base64," +
+                                        android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                                }
+                            }
                             val reply = AiClient.chatImages(
                                 apiBase,
                                 key,
                                 model,
                                 QuizPrompt.vision(courseContext(), q.inputs, heard, q.stem),
-                                q.images,
+                                inline,
                             )
                             val values = AiParse.answers(reply.text)
                             if (values.isNotEmpty()) {
