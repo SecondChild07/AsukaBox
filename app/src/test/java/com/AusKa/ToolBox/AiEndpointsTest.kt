@@ -45,12 +45,15 @@ class AiEndpointsTest {
     }
 
     @Test
-    fun hintSaysWhetherVisionWorks() {
+    fun hintShowsProviderNameOnly() {
         val glm = AiEndpoints.hintFor("glm-4v-flash")
         assertTrue(glm!!.contains("智谱"))
-        assertTrue(glm.contains("识图"))
+        // 不再按模型名猜「能不能识图」：同一家不同型号能力不一样，猜错会误导用户
+        assertTrue(!glm.contains("纯文本"))
+        assertTrue(!glm.contains("识图"))
         val kimi = AiEndpoints.hintFor("moonshot-v1-8k")!!
-        assertTrue(kimi.contains("纯文本"))
+        assertTrue(kimi.isNotBlank())
+        assertTrue(!kimi.contains("纯文本"))
         assertNull(AiEndpoints.hintFor("stub"))
     }
 }

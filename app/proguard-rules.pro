@@ -42,3 +42,12 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 -keep class com.AusKa.ToolBox.chaoxing.CsBridge { *; }
+
+# 本地语音转写：sherpa-onnx 的 JNI 是按「类名 + 方法名」反射找方法（native 方法名要和 .so 里的符号对上），
+# 这个工程的 -repackageclasses / -overloadaggressively 会把名字改掉，改完 natives 找不到就 UnsatisfiedLinkError。
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+-dontwarn com.k2fsa.sherpa.onnx.**
+

@@ -20,6 +20,7 @@ internal object ChaoxingStore {
     private const val K_AI_KEY = "ai_key"
     private const val K_AI_MODEL = "ai_model"
     private const val K_STT_MODEL = "ai_stt_model"
+    private const val K_STT_MODE = "ai_stt_mode"
     private const val K_STT_BASE = "ai_stt_base"
     private const val K_STT_KEY = "ai_stt_key"
     private const val K_AI_BASE = "ai_base"
@@ -34,6 +35,12 @@ internal object ChaoxingStore {
 
     /** 回填完自动点提交（只尝试一次，核验失败就交回人工） */
     const val SUBMIT_AUTO = "auto"
+
+    /** 听力转写：手机本地模型（离线，模型首次用到时下载） */
+    const val STT_LOCAL = "local"
+
+    /** 听力转写：云端 STT 接口（要自己填地址和 Key） */
+    const val STT_CLOUD = "cloud"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -104,6 +111,24 @@ internal object ChaoxingStore {
         val e = prefs(context).edit()
         if (m.isEmpty()) e.remove(K_STT_MODEL) else e.putString(K_STT_MODEL, m)
         e.apply()
+    }
+
+    /**
+     * 听力转写走哪条路：手机本地模型 / 云端 STT 接口。
+     *
+     * 默认值的取舍：没填云端地址就默认本地（不然填了也没人用），填了就沿用云端，
+     * 保持老用户升级后的行为不变。
+     */
+    fun sttMode(context: Context): String {
+        val stored = prefs(context).getString(K_STT_MODE, "").orEmpty()
+        if (stored == STT_LOCAL || stored == STT_CLOUD) return stored
+        return if (sttBase(context).isBlank()) STT_LOCAL else STT_CLOUD
+    }
+
+    fun setSttMode(context: Context, mode: String) {
+        prefs(context).edit()
+            .putString(K_STT_MODE, if (mode == STT_CLOUD) STT_CLOUD else STT_LOCAL)
+            .apply()
     }
 
     fun aiModel(context: Context): String =

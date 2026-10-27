@@ -130,7 +130,6 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
     var solving by remember { mutableStateOf(false) }
     var solveNote by remember { mutableStateOf("") }
     // 接口不支持图片输入时弹一次，别让它悄悄答错
-    var visionWarn by remember { mutableStateOf(false) }
 
     val signedIn = remember(snapshot) { CookieSnapshot.looksSignedIn(snapshot) }
     val webView = remember(context) { WebView(context) }
@@ -291,14 +290,15 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             solveNote = "先去「设置 → AI Key」填一条 key"
             return
         }
-        val model = ChaoxingStore.aiModel(context).ifBlank { AiClient.DEFAULT_MODEL }
+        // 可能被开头那次「接口自检」改掉（模型名过期时），所以用 var
+        var model = ChaoxingStore.aiModel(context).ifBlank { AiClient.DEFAULT_MODEL }
+        var apiChecked = false
         // 地址优先用用户填的；没填就按模型名推（deepseek-chat → api.deepseek.com/v1 这种）
         val apiBase = ChaoxingStore.aiBase(context).ifBlank {
             AiEndpoints.baseFor(model) ?: AiClient.DEFAULT_BASE
         }
-        // 现在只有一套模型。用户可能填的是纯文本模型，那就跳过看图的题，别硬问
-        // 不按模型名预判能不能识图：先试，服务端明说不收图再记下来
-        var visionBroken = false
+        // 一套模型同时做文字题和图片题。不按模型名预判能不能识图 —— 用户明确说过他的模型支持，
+        // 少一次「先猜再跳过」的往返；真失败就留空并记进错误里，不再弹窗拦整页
         solving = true
         solveNote = "读取题目…"
         webView.evaluateJavascript(QuizScripts.QUESTIONS) { raw ->
@@ -309,8 +309,6 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                 return@evaluateJavascript
             }
             val stats = intArrayOf(0, 0, list.size)
-            // 因「接口不认图片」被跳过的题数
-            var skipped = 0
             // 本来就有答案、没动的题数
             var already = 0
             // 改掉之前错选的题数
@@ -447,21 +445,14 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         (if (overwritten > 0) "，改了 " + overwritten + " 道之前的错选" else "") +
                         (if (uncertain > 0) "，" + uncertain + " 题没把握、留给你自己看" else "") +
                         (if (fromBank > 0) "，其中 " + fromBank + " 题来自题库" else "") +
-                        (if (noTranscript > 0) "；" + noTranscript + " 道听力题没拿到转写（当前服务商没有语音转文字接口），只能靠图猜" else "") +
-                        (if (skipped > 0) "，跳过 " + skipped + " 道看图题（当前接口不认图片）" else "") +
+                        (if (noTranscript > 0) "；" + noTranscript + " 道听力题没拿到转写（语音模型没就绪，或当前服务商不支持转写），只能靠图猜" else "") +
                         (if (stats[0] == 0 && firstError.isNotEmpty()) "。原因：" + AiSupport.friendly(firstError) else "") +
                         " · 没提交，自己看一眼再点提交"
                     if (stats[0] > 0) scanNote = "AI 已填 " + stats[0] + " 题（未提交）"
                 } else {
                     val q = list[at]
                     val picQuestion = q.images.isNotEmpty() && q.inputs > 0
-                    // 先试一次，服务端明说不认图片才记下来，后面的图片题就不再硬问了
-                    if (picQuestion && visionBroken) {
-                        skipped++
-                        solveNote = "第 " + (at + 1) + "/" + list.size + " 题 · 题面是图片，" +
-                            "当前接口不认图片 · 跳过"
-                        stepRef?.invoke(at + 1)
-                    } else {
+                    run {
                         solveNote = "第 " + (at + 1) + "/" + list.size + " 题 · " + kindLabel(q.kind) +
                             (if (picQuestion) " · 题面是图片" else "")
                         // webView.url 只能在主线程读 —— 放到后台线程里会直接崩（已实测踩到）
@@ -471,13 +462,47 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                             val prev = parseChecked(state)
                             val prevFilled = parseFilled(state)
                             Thread {
+                        // 开跑前先花 1 秒验一次接口：模型名过期是最常见的失败原因，
+                        // 以前是「先转写 2~3 分钟、再被 400 打回」，用户看到的就是「又慢又没填」。
+                        if (at == 0 && !apiChecked) {
+                            apiChecked = true
+                            val probe = preflight(context, apiBase, key, model, wantVision = true)
+                            if (probe.error.isNotBlank()) {
+                                webView.post {
+                                    solving = false
+                                    solveNote = "AI 接口不能用：" + probe.error
+                                    scanNote = "没开始答题，先把接口修好"
+                                }
+                                return@Thread
+                            }
+                            if (probe.model.isNotBlank() && probe.model != model) {
+                                val fixed = probe.model
+                                model = fixed
+                                ChaoxingStore.setAiModel(context, fixed)
+                                webView.post { solveNote = "模型名已自动改成 " + fixed }
+                            }
+                        }
                         // 听力题先转写，再把原文塞进同一次提问里 —— 之前是「先问、答不出来才转写」，
                         // 结果模型随便回一个字母就跳过了转写，听力全错。
                         val hasAudio = q.audio.isNotBlank() || q.kind == "listening"
-                        val sttConfigured = ChaoxingStore.sttBase(context).isNotBlank()
+                        // 本地模型也算「配好了」：以前只认云端地址，结果本地模式下被整段跳过
+                        val sttConfigured = ChaoxingStore.sttBase(context).isNotBlank() ||
+                            ChaoxingStore.sttMode(context) == ChaoxingStore.STT_LOCAL
                         val sttBase = ChaoxingStore.sttBase(context).ifBlank { apiBase }
                         val sttKey2 = ChaoxingStore.sttKey(context).ifBlank { key }
-                        val heard = if (hasAudio && sttConfigured) transcribeAudio(q.audio, pageUrl, sttBase, sttKey2, ChaoxingStore.sttModel(context)) else ""
+                        val heard = if (hasAudio && sttConfigured) {
+                            transcribeAudio(
+                                context = context,
+                                raw = q.audio,
+                                base = pageUrl,
+                                apiBase = sttBase,
+                                key = sttKey2,
+                                sttModel = ChaoxingStore.sttModel(context),
+                                onNote = { msg -> webView.post { solveNote = msg } },
+                            )
+                        } else {
+                            ""
+                        }
                         if (hasAudio && heard.isBlank()) webView.post { noTranscript++ }
                         // 题面是图片的（Section A/B 那种）：一次问整块，按空位顺序填字母
                         // 题库优先：命中的话直接用，不问模型（图片题先跳过题库，题面在图里对不上文本）
@@ -500,14 +525,10 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         if (picQuestion) {
                             // 题面图片挂在超星 CDN 上，要带会话才下得下来；
                             // 直接把这个地址丢给模型，模型那边是抓不到的（会回 4xx），所以先下成 base64 再发。
+                            // 顺手缩图重编码：原图常是 1~3 MB 的 PNG，手机上传它是纯等
                             val inline = q.images.mapNotNull { u ->
                                 val bytes = HttpText.bytes(u, cookieFor(u), "https://mooc1.chaoxing.com/")
-                                if (bytes.isEmpty()) {
-                                    null
-                                } else {
-                                    "data:image/png;base64," +
-                                        android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                                }
+                                if (bytes.isEmpty()) null else ImageInline.dataUri(bytes)
                             }
                             val reply = AiClient.chatImages(
                                 apiBase,
@@ -518,22 +539,23 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                             )
                             val values = AiParse.answers(reply.text)
                             if (values.isNotEmpty()) {
+                                // 只回了一部分（要 7 个只给 5 个）：照样填，但记一笔让用户自己核
+                                if (values.size < q.inputs) webView.post { uncertain++ }
                                 webView.post { applyLetters(q, values, 0, at) }
                                 return@Thread
                             }
+                            // 拿到空答案就别再往下走文字那一路了：那等于同一道题再问一遍，
+                            // 白等一轮（以前这里会掉下去，慢一倍）
                             if (!reply.ok) synchronized(errors) { if (errors.size < 3) errors.add(reply.error) }
-                            if (!reply.ok && AiSupport.meansNoVision(reply.error)) {
-                                // 服务端明说不收图：记下来，后面的图片题直接跳过，别再浪费时间
-                                webView.post { visionBroken = true }
-                                webView.post {
-                                    skipped++
-                                    if (!visionWarn) visionWarn = true
-                                    stepRef?.invoke(at + 1)
-                                }
-                                return@Thread
+                            webView.post {
+                                uncertain++
+                                stepRef?.invoke(at + 1)
                             }
+                            return@Thread
                         }
-                        // 一次不够：把握 < 0.8 再让它算一遍，取更确定的那个
+                        // 一次不够：把握 < 0.8 再让它算一遍，取更确定的那个。
+                        // 这里刻意不问第三遍 —— 每次提问都是一整轮网络往返，
+                        // 一套 25 空的听力，多问一轮就是几十秒，用户体感就是「太慢」。
                         var reply = AiClient.chatResult(
                             apiBase,
                             key,
@@ -542,35 +564,20 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         )
                         if (!reply.ok) synchronized(errors) { if (errors.size < 3) errors.add(reply.error) }
                         var ans = AiParse.answer(reply.text)
-                        if (ans.conf < 0.8) {
+                        if (ans.conf < 0.8 && ans.letters.isNotEmpty()) {
                             val second = AiClient.chatResult(
                                 apiBase,
                                 key,
                                 model,
-                                QuizPrompt.retry(q, courseContext()),
+                                QuizPrompt.retry(q, courseContext(), heard),
                             )
                             if (!second.ok) synchronized(errors) { if (errors.size < 3) errors.add(second.error) }
                             val ans2 = AiParse.answer(second.text)
                             if (ans2.conf >= ans.conf) ans = ans2
                         }
-                        // 两次一致才落笔：模型自己都不稳的题先留空，别把可能对的改成错的
-                        if (!hasAudio && ans.letters.isNotEmpty() && ans.conf < 0.95) {
-                            val third = AiClient.chatResult(
-                                apiBase,
-                                key,
-                                model,
-                                QuizPrompt.retry(q, courseContext()),
-                            )
-                            val ans3 = AiParse.answer(third.text)
-                            if (ans3.letters == ans.letters) {
-                                ans = ans.copy(conf = 0.97)
-                            } else if (ans.conf < 0.9) {
-                                webView.post {
-                                    uncertain++
-                                    stepRef?.invoke(at + 1)
-                                }
-                                return@Thread
-                            }
+                        // 两轮都不太确定：照样填（用户要的是先填上，自己再核），只是标记出来
+                        if (ans.letters.isNotEmpty() && ans.conf < 0.9) {
+                            webView.post { uncertain++ }
                         }
                         val finalAns = ans
                         webView.post { applyAt(q, finalAns, at, prev, prevFilled) }
@@ -969,26 +976,6 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        if (visionWarn) {
-            androidx.compose.material3.AlertDialog(
-                onDismissRequest = { visionWarn = false },
-                title = { Text("这个接口不认图片") },
-                text = {
-                    Text(
-                        "这页的题面是图片，纯文本模型读不了图，所以这几道跳过了、没有乱填。\n\n" +
-                            "想让它做这类题：去「设置 → AI Key」，模型换成带视觉的" +
-                            "（glm-4v-flash、gemini-2.0-flash、gpt-4o 这一类）。\n" +
-                            "只做文字题的话，现在这套就能用。",
-                        fontSize = 13.sp,
-                    )
-                },
-                confirmButton = {
-                    androidx.compose.material3.TextButton(onClick = { visionWarn = false }) {
-                        Text("知道了")
-                    }
-                },
-            )
-        }
     }
 }
 
@@ -1629,8 +1616,21 @@ private fun cookieFor(url: String): String =
  *  - `object:` 前缀 + 若干 objectid（超星 audioplay.html 的 iframe），要用 /ananas/status/<id> 换真实下载地址；
  *  - 普通 URL（老页面直接放 audio）。
  * 拿到字节后逐段转写，拼成一段原文交给模型。
+ *
+ * 转写有两条路（见 [ChaoxingStore.sttMode]）：
+ *  - 本地：sherpa-onnx + SenseVoice，音频不出手机，但模型要首次下载；
+ *  - 云端：POST 到用户自己填的 STT 接口。
+ * 本地是默认值；本地模型没就绪、又配了云端，就先退回云端顶上，并在提示里说清楚。
  */
-private fun transcribeAudio(raw: String, base: String, apiBase: String, key: String, sttModel: String = ""): String {
+private fun transcribeAudio(
+    context: android.content.Context,
+    raw: String,
+    base: String,
+    apiBase: String,
+    key: String,
+    sttModel: String = "",
+    onNote: (String) -> Unit = {},
+): String {
     // 同一个作业里几个填空块共用同一批音频，不缓存的话每块都会重下一遍（8 段 mp3 × 3 块）
     synchronized(audioCache) { audioCache[raw] }?.let { return it }
     val urls = if (raw.startsWith("object:")) {
@@ -1642,23 +1642,72 @@ private fun transcribeAudio(raw: String, base: String, apiBase: String, key: Str
     } else {
         listOf(absoluteUrl(raw, base)).filter { it.isNotBlank() }
     }
+
+    var local = ChaoxingStore.sttMode(context) == ChaoxingStore.STT_LOCAL
+    if (local && !LocalAsr.isReady(context)) {
+        if (apiBase.isNotBlank() && key.isNotBlank()) {
+            // 配了云端就别让用户干等 228 MB 下载
+            local = false
+            onNote("语音模型还没下载，这次先用云端转写")
+        } else {
+            // 没云端可退，只能现在下（几分钟，进度打在答题提示上）
+            onNote("首次使用，正在下载语音模型（约 " + LocalAsr.sizeMb() + " MB）…")
+            if (!LocalAsr.prepare(context) { msg -> onNote(msg) }) {
+                onNote("语音模型没准备好：" + LocalAsr.error())
+                return ""
+            }
+            local = true
+        }
+    }
+
     val sb = StringBuilder()
-    urls.forEach { u ->
-        val bytes = HttpText.bytes(u, cookieFor(u), base)
+    // 8 段音频加起来二三十 MB，串行下载在慢网下能拖掉好几分钟 —— 并发拉，最多 4 路。
+    // 这里只是把字节先拿到手，转写仍然是逐段的（模型不能并行跑）。
+    val blobs = arrayOfNulls<ByteArray>(urls.size)
+    if (urls.size > 1) {
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(4, urls.size))
+        urls.forEachIndexed { i, u -> pool.execute { blobs[i] = HttpText.bytes(u, cookieFor(u), base) } }
+        pool.shutdown()
+        pool.awaitTermination(15, java.util.concurrent.TimeUnit.MINUTES)
+    } else {
+        urls.forEachIndexed { i, u -> blobs[i] = HttpText.bytes(u, cookieFor(u), base) }
+    }
+
+    blobs.forEach { b ->
+        val bytes = b ?: return@forEach
         if (bytes.isEmpty()) return@forEach
         val model = sttModel.ifBlank { "whisper-1" }
         // 有的接口只收 30 秒以内的音频（智谱 GLM-ASR），所以先切成小段再逐段转写；
         // 切不出来（解码失败）就退回整文件上传。
-        val chunks = AudioChunks.wavChunks(bytes)
+        // 本地模型没有 30 秒限制，切大一点少几次解码/建流的开销；云端接口那边还是 26 秒
+        val chunks = AudioChunks.chunkAudio(bytes, if (local) LOCAL_CHUNK_SECONDS else 26)
         if (chunks.isEmpty()) {
+            if (local) return@forEach // 本地要 PCM，解码失败就真的没辙了
             val text = AiClient.transcribe(apiBase, key, bytes, model)
             if (text.isNotBlank()) {
                 if (sb.isNotEmpty()) sb.append('\n')
                 sb.append(text)
             }
+        } else if (local) {
+            // 逐段转、逐段丢：一整份 WAV 副本 30 MB 上下，攥着等 ASR 跑完纯属浪费内存。
+            // removeAt(0) 之后那段字节立刻可回收，转写阶段的峰值就只剩「一段采样 + 模型工作区」。
+            val queue = ArrayList(chunks)
+            val total = queue.size
+            var done = 0
+            while (queue.isNotEmpty()) {
+                val c = queue.removeAt(0)
+                done++
+                onNote("本地转写 " + done + "/" + total + " 段…")
+                val samples = AudioChunks.toMono16k(AudioChunks.pcmOf(c.wav), c.sampleRate, c.channels)
+                val text = LocalAsr.transcribe(context, samples)
+                if (text.isNotBlank()) {
+                    if (sb.isNotEmpty()) sb.append('\n')
+                    sb.append(text)
+                }
+            }
         } else {
             chunks.forEach { c ->
-                val text = AiClient.transcribe(apiBase, key, c, model, "a.wav")
+                val text = AiClient.transcribe(apiBase, key, c.wav, model, "a.wav")
                 if (text.isNotBlank()) {
                     if (sb.isNotEmpty()) sb.append('\n')
                     sb.append(text)
@@ -1671,8 +1720,50 @@ private fun transcribeAudio(raw: String, base: String, apiBase: String, key: Str
     return result
 }
 
-/** 转写结果缓存：key 是页面里那串原始 audio 描述（objectid 列表） */
-private val audioCache = HashMap<String, String>()
+/** 开跑前的接口自检结果：model 非空表示「模型名该换成这个」，error 非空表示「这轮没戏」 */
+private class Preflight(val model: String, val error: String)
+
+/**
+ * 花 1 秒验一次接口，别等转写完两分钟才被 400 打回来。
+ *
+ * 判据用 `GET /models`（各家都有，最便宜）：
+ *  - 列表里有当前模型 → 直接过
+ *  - 列表里没有 → 说明这个名字过期/写错（DeepSeek 的 deepseek-chat 就是这样），自动换成清单里最合适的
+ *  - 401/403 → Key 本身不行，整轮停下并说清楚
+ *  - 404/405（中转站不实现 /models）→ 不能判死刑，放行
+ */
+private fun preflight(
+    context: android.content.Context,
+    base: String,
+    key: String,
+    current: String,
+    wantVision: Boolean,
+): Preflight {
+    if (key.isBlank()) return Preflight("", "还没填 Key")
+    val (ids, err) = AiClient.listModels(base, key)
+    if (ids.isEmpty()) {
+        val hard = err.contains("401") || err.contains("403") ||
+            err.contains("invalid", true) || err.contains("unauthorized", true) ||
+            err.contains("验证不正确", true) || err.contains("无效", true)
+        return if (hard) Preflight("", "Key 无效（" + err.take(90) + "）") else Preflight("", "")
+    }
+    if (ids.any { it.equals(current, true) }) return Preflight("", "")
+    val picked = (if (wantVision) AiProbe.pickVision(ids) else null) ?: AiProbe.pickAny(ids)
+    return if (picked == null) Preflight("", "服务商没有能用的聊天模型") else Preflight(picked, "")
+}
+
+/** 本地 ASR 的切段长度：模型是按 30 秒窗口训练的，正好卡满，别超 */
+private const val LOCAL_CHUNK_SECONDS = 30
+
+/**
+ * 转写结果缓存：key 是页面里那串原始 audio 描述（objectid 列表）。
+ *
+ * 全局 Map 会跟着 App 一直活着，所以封顶 8 条（LinkedHashMap 按访问顺序淘汰最旧的那条）。
+ * 一个作业最多 8 段，够用；再多的留着只是白占内存。
+ */
+private val audioCache = object : LinkedHashMap<String, String>(16, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > 8
+}
 
 /** objectid → 真实音频地址（/ananas/status 返回的 download / http 字段） */
 private fun resolveAudioUrl(objectId: String, referer: String): String? {

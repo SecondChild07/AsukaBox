@@ -31,6 +31,21 @@ val keyPass = secret("RELEASE_KEY_PASSWORD") ?: storePass
 val keyStoreFile = storePath?.let { file(it) }
 val hasReleaseKey = keyStoreFile?.exists() == true && !storePass.isNullOrBlank() && !keyAliasName.isNullOrBlank()
 
+// ---------------------------------------------------------------------------
+// 把语音模型打进 APK（可选）。
+//   瘦包（默认）：53 MB，模型首次使用时在线下载 / 或从手机里导入。
+//   胖包：-PWITH_ASR=true，把 asr-assets/asr/sensevoice-model.zip（约 229 MB）放进 assets，
+//         首次用到时自己解压到 filesDir，全程不联网。包体约 280 MB。
+// asr-assets 已被 .gitignore 排除（模型不进仓库）。
+// ---------------------------------------------------------------------------
+val asrAssetsDir = rootProject.file("asr-assets")
+val withAsr: Boolean = run {
+    val fromGradle = providers.gradleProperty("WITH_ASR").orNull
+    val fromLocal = secret("WITH_ASR")
+    (fromGradle ?: fromLocal)?.trim()?.equals("true", ignoreCase = true) == true &&
+        File(asrAssetsDir, "asr/sensevoice-model.zip").exists()
+}
+
 // 从 keystore 里读出证书 SHA-256，注入 BuildConfig，供运行时签名校验使用。
 // 换签名不用改代码，Guard 自动跟着变。
 val certSha256: String = if (hasReleaseKey) runCatching {
@@ -50,8 +65,8 @@ android {
         applicationId = "com.AusKa.ToolBox"
         minSdk = 24
         targetSdk = 37
-        versionCode = 200
-        versionName = "2.0"
+        versionCode = 210
+        versionName = "2.1"
 
         // 空字符串 = 未配置签名，运行时跳过签名校验
         buildConfigField("String", "CERT_SHA256", "\"$certSha256\"")
@@ -78,6 +93,12 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
+            // 本地语音转写带着 onnxruntime 的 so（arm64 一个架构就 ~30 MB），
+            // 四个架构全打进去包体直接翻倍，正式包只留真机用得上的两个；
+            // 模拟器（x86_64）调试请用 debug 包，debug 不裁剪。
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
             // release 用正式 keystore；没配（本地没 release.jks）时退回 debug，能跑起来
             signingConfig = signingConfigs.getByName(if (hasReleaseKey) "release" else "debug")
             optimization {
@@ -105,6 +126,18 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // 胖包：把模型 zip 并进 assets（目录里必须真的有 asr/sensevoice-model.zip，否则当没开）
+    sourceSets {
+        getByName("main") {
+            if (withAsr) assets.srcDir(asrAssetsDir)
+        }
+    }
+
+    // 模型 zip 不要再压缩一遍：onnx 权重已经没什么可压的，压了反而装得慢、解压要两遍
+    androidResources {
+        noCompress += "zip"
     }
 
     // 别把依赖清单和 Kotlin 元数据打进包里：
@@ -137,6 +170,10 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    // 手机本地语音转写（听力题）：sherpa-onnx 的 Android 封装，Kotlin 直接调 com.k2fsa.sherpa.onnx.*
+    // 官方只发 GitHub Release 的 AAR（本机 GitHub 不通），这里用 Maven Central 上的同源重打包，
+    // 代码包名/接口与官方一致，含 arm64-v8a / armeabi-v7a / x86 / x86_64 四个 .so（已按 16 KB 页对齐）
+    implementation("com.bihe0832.android:lib-sherpa-onnx:8.6.10")
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

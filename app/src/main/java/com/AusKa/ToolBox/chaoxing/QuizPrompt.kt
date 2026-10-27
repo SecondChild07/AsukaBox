@@ -112,8 +112,8 @@ internal object QuizPrompt {
      * 一次问一整块：模型按题号顺序返回字母数组，程序负责按空位顺序填。
      */
     /** 第一次把握不到 0.8 时，让它再想一遍（同一题、加一句提醒） */
-    fun retry(q: QuizQuestion, course: String = ""): String =
-        user(q, course) + "\n\n刚才那次你自己觉得不太确定（conf<0.8）。" +
+    fun retry(q: QuizQuestion, course: String = "", transcript: String = ""): String =
+        user(q, course, transcript) + "\n\n刚才那次你自己觉得不太确定（conf<0.8）。" +
             "这次换个角度：先把题干的关键词圈出来，再逐项对照原文，重新判断一遍。" +
             "仍然要带 conf，还是不确定就照实写低的 conf。" +
             "输出格式不变，只输出 JSON。"

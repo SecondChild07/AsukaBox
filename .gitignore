@@ -36,3 +36,6 @@ Thumbs.db
 *.log
 
 *.bak
+
+# 自带模型的打包素材（228 MB 模型不进仓库）
+asr-assets/

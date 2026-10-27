@@ -119,9 +119,11 @@ internal object AiEndpoints {
 
     fun baseFor(model: String): String? = endpointFor(model)?.base
 
-    /** 给界面用的一句话：这家叫什么、能不能读图 */
-    fun hintFor(model: String): String? {
-        val e = endpointFor(model) ?: return null
-        return e.label + if (e.vision) " · 支持识图" else " · 纯文本"
-    }
+    /**
+     * 给界面用的一句话：这家叫什么。
+     *
+     * 刻意不判「能不能识图」—— 同一家的不同模型能力不一样（glm-4-flash 不能看图、glm-4v-flash 能），
+     * 按模型名前缀猜会给出错的结论，还会让人以为自己填错了。填 Key 之前提示一次就够了。
+     */
+    fun hintFor(model: String): String? = endpointFor(model)?.label
 }

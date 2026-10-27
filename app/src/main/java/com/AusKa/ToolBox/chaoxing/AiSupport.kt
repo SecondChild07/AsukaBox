@@ -47,6 +47,12 @@ internal object AiSupport {
             m.contains("403") || m.contains("forbidden") -> "这个 Key 没有这个模型的权限"
             m.contains("404") || m.contains("not found") || m.contains("no such model") ||
                 m.contains("model_not_found") -> "接口地址或模型名不对"
+            // 同样是 400，这两种含义完全不同，先分清楚再给人话
+            m.contains("400") && m.contains("image") &&
+                (m.contains("variant") || m.contains("not support") || m.contains("unsupported")) ->
+                "这个模型不收图片，换个能看图的"
+            // 服务端会把「支持的模型名」原样列在 400 里，多留点字，用户照着改就行
+            m.contains("400") -> "模型名或参数不对：" + message.take(160)
             m.contains("429") || m.contains("rate limit") -> "请求太频繁，被限流了"
             m.contains("timeout") || m.contains("timed out") -> "接口超时，检查网络"
             m.contains("unknownhost") || m.contains("unable to resolve host") -> "域名解析失败，检查地址"

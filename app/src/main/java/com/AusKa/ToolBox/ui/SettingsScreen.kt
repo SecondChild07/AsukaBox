@@ -19,10 +19,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +85,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var modelIds by remember { mutableStateOf(listOf<String>()) }
     var modelFetchNote by remember { mutableStateOf("") }
     var fetchingModels by remember { mutableStateOf(false) }
+    // 贴 Key 后自动识别服务商 + 模型
+    var probing by remember { mutableStateOf(false) }
+    var probeNote by remember { mutableStateOf("") }
     // 题库：默认开，先查题库再问模型
     var bankOn by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.QuizBank.enabled(app)) }
     var bankCount by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.QuizBank.localCount(app)) }
@@ -91,6 +96,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var sttBaseDraft by remember { mutableStateOf("") }
     var sttKeyDraft by remember { mutableStateOf("") }
     var sttModelDraft by remember { mutableStateOf("") }
+    // 听力转写方式：本地（默认）/ 云端
+    var sttLocal by remember { mutableStateOf(ChaoxingStore.sttMode(app) == ChaoxingStore.STT_LOCAL) }
+    var modelReady by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.LocalAsr.isReady(app)) }
+    var bundledInApk by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.LocalAsr.bundled(app)) }
+    var dlRunning by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.LocalAsr.downloading) }
+    var dlProgress by remember { mutableStateOf(0f) }
+    var dlNote by remember { mutableStateOf("") }
     var bankDraft by remember { mutableStateOf("") }
     var bankNote by remember { mutableStateOf("") }
     var bankUrlDraft by remember { mutableStateOf(com.AusKa.ToolBox.chaoxing.QuizBank.endpoint(app)) }
@@ -98,6 +110,33 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var editTimes by remember { mutableStateOf(false) }
     var timeDraft by remember { mutableStateOf(listOf<Pair<String, String>>()) }
     val hasAccount = ttStore.hasAccount
+
+    // 从手机里挑模型文件（支持多选两个文件，或选一个 zip）
+    val importPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            dlNote = "正在导入模型…"
+            Thread { com.AusKa.ToolBox.chaoxing.LocalAsr.importFrom(app, uris) }.start()
+        }
+    }
+
+    // 模型下载是后台线程在跑，对话框开着的时候 400 ms 拉一次进度
+    LaunchedEffect(editStt) {
+        if (editStt) {
+            com.AusKa.ToolBox.chaoxing.LocalAsr.resetNote()
+        }
+        while (editStt) {
+            dlRunning = com.AusKa.ToolBox.chaoxing.LocalAsr.downloading
+            dlProgress = com.AusKa.ToolBox.chaoxing.LocalAsr.progress
+            val note = com.AusKa.ToolBox.chaoxing.LocalAsr.lastNote()
+            if (note.isNotBlank()) dlNote = note
+            if (!dlRunning) {
+                modelReady = com.AusKa.ToolBox.chaoxing.LocalAsr.isReady(app)
+            }
+            kotlinx.coroutines.delay(400)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -166,6 +205,31 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         modelDraft = aiModel
                         baseDraft = aiBase
                         editAi = true
+                    },
+                    trailingArrow = true,
+                )
+                GlassDivider()
+                // 听力题要先把音频转成文字，转写方式（本地/云端）单独一条
+                GlassRow(
+                    title = "听力转写",
+                    subtitle = when {
+                        ChaoxingStore.sttMode(app) == ChaoxingStore.STT_LOCAL && modelReady ->
+                            "手机本地识别 · 音频不出手机（模型已就绪）"
+                        ChaoxingStore.sttMode(app) == ChaoxingStore.STT_LOCAL && bundledInApk ->
+                            "手机本地识别 · 模型在安装包里，首次用到时自动释放"
+                        ChaoxingStore.sttMode(app) == ChaoxingStore.STT_LOCAL ->
+                            "手机本地识别 · 模型还没下载（约 " + com.AusKa.ToolBox.chaoxing.LocalAsr.sizeMb() + " MB）"
+                        else -> "云端接口 · 用自己的 STT 服务（OpenAI / 硅基流动 等）"
+                    },
+                    value = if (ChaoxingStore.sttMode(app) == ChaoxingStore.STT_LOCAL) "本地" else "云端",
+                    onClick = {
+                        sttLocal = ChaoxingStore.sttMode(app) == ChaoxingStore.STT_LOCAL
+                        sttBaseDraft = ChaoxingStore.sttBase(app)
+                        sttKeyDraft = ""
+                        sttModelDraft = ChaoxingStore.sttModel(app)
+                        modelReady = com.AusKa.ToolBox.chaoxing.LocalAsr.isReady(app)
+                        dlNote = ""
+                        editStt = true
                     },
                     trailingArrow = true,
                 )
@@ -290,6 +354,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
 
                     Text("文本 / 识图（答题用）", fontSize = 13.sp)
+                    // 只在这里提示一次：听力作业大半是图片题，模型不会看图基本白填
+                    Text(
+                        "提示一句：听力作业的题干和选项基本都是图片，模型得能看图" +
+                            "（gpt-4o / gemini-2.0-flash / glm-4v 这类）。",
+                        fontSize = 11.sp,
+                        color = palette.warn,
+                    )
                     Spacer(Modifier.height(4.dp))
                     AiKeyFields(
                         keyValue = aiDraft,
@@ -309,6 +380,41 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         onBase = { baseDraft = it },
                         advanced = showAdvanced,
                     )
+
+                    // 贴完 Key 点一下：拿它去问服务商要模型列表，自动填地址和模型名
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        TextButton(
+                            enabled = !probing,
+                            onClick = {
+                                val k = aiDraft.ifBlank { aiKey }
+                                if (k.isBlank()) {
+                                    probeNote = "先把 Key 填进去"
+                                } else {
+                                    probing = true
+                                    probeNote = "正在识别…"
+                                    Thread {
+                                        val hit = com.AusKa.ToolBox.chaoxing.AiProbe.probe(k) { msg ->
+                                            android.os.Handler(android.os.Looper.getMainLooper()).post { probeNote = msg }
+                                        }
+                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                            probing = false
+                                            if (hit == null) {
+                                                probeNote = "这把 Key 在常见服务商那里都没认出来：可能没复制全，或者绑了 IP 白名单"
+                                            } else {
+                                                baseDraft = hit.base
+                                                modelDraft = hit.model
+                                                probeNote = "识别到 " + hit.label + "，可用 " + hit.total + " 个模型，已选 " +
+                                                    hit.model + (if (hit.vision) "（能读图）" else "（没找到能读图的）")
+                                            }
+                                        }
+                                    }.start()
+                                }
+                            },
+                        ) { Text(if (probing) "识别中…" else "自动识别服务商和模型", fontSize = 12.sp) }
+                    }
+                    if (probeNote.isNotEmpty()) {
+                        Text(probeNote, fontSize = 11.sp, color = palette.textTertiary)
+                    }
 
                     if (showAdvanced) {
                         TextButton(
@@ -368,10 +474,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         if (showAdvanced) {
-                            "带视觉能力（glm-4v / gemini / gpt-4o 这类）才能做听力图片题；" +
-                                "纯文本模型（deepseek-chat 等）遇到看图题会跳过，并提示你换模型。"
+                            "模型名一填，接口地址会按服务商自动配好；对不上就手动改成服务商给的地址。"
                         } else {
-                            "默认用 DeepSeek 的 deepseek-chat。要换 Kimi、通义、智谱这些，" +
+                            "默认用 DeepSeek 的 deepseek-flash。要换 Kimi、通义、智谱这些，" +
                                 "点上面的「高级」，模型名一填地址就自动配好。"
                         },
                         fontSize = 12.sp,
@@ -384,51 +489,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         }
                     }
                     Spacer(Modifier.height(10.dp))
-                    Text("听力转写（可选）", fontSize = 13.sp)
+                    // 转写的配置搬到了设置页的「听力转写」那一条，这里只留个入口说明
                     Text(
-                        "听力题要先把音频转成文字。留空就用上面这套；上面如果是 DeepSeek 这种没有转写接口的，就填一个能转写的服务（硅基流动 / OpenAI / Groq）。",
+                        "听力题的转写方式（手机本地 / 云端）在设置页的「听力转写」里改。",
                         fontSize = 11.sp,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                        listOf(
-                            Triple("智谱", "https://open.bigmodel.cn/api/paas/v4", "glm-asr-2512"),
-                            Triple("SiliconFlow", "https://api.siliconflow.cn/v1", "FunAudioLLM/SenseVoiceSmall"),
-                            Triple("OpenAI", "https://api.openai.com/v1", "whisper-1"),
-                            Triple("Groq", "https://api.groq.com/openai/v1", "whisper-large-v3"),
-                        ).forEach { (name, b, m) ->
-                            TextButton(onClick = {
-                                sttBaseDraft = b
-                                sttModelDraft = m
-                            }) { Text(name, fontSize = 12.sp) }
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = sttBaseDraft,
-                        onValueChange = { sttBaseDraft = it },
-                        label = { Text("转写接口地址") },
-                        placeholder = { Text("https://api.siliconflow.cn/v1") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = sttKeyDraft,
-                        onValueChange = { sttKeyDraft = it },
-                        label = { Text("转写 Key") },
-                        placeholder = { Text("留空沿用上面的 Key") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = sttModelDraft,
-                        onValueChange = { sttModelDraft = it },
-                        label = { Text("转写模型名") },
-                        placeholder = { Text("FunAudioLLM/SenseVoiceSmall / whisper-1") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        color = palette.textTertiary,
                     )
                     TextButton(onClick = {
                         bankDraft = ""
@@ -454,10 +519,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         ChaoxingStore.setAiBase(app, baseDraft.trim())
                         aiBase = baseDraft.trim()
                     }
-                    // 听力转写：单独一套，留空表示沿用上面那套
-                    ChaoxingStore.setSttBase(app, sttBaseDraft.trim())
-                    if (sttKeyDraft.isNotBlank()) ChaoxingStore.setSttKey(app, sttKeyDraft.trim())
-                    ChaoxingStore.setSttModel(app, sttModelDraft.trim())
+                    // 听力转写的配置在「听力转写」那条里单独存，这里不碰，免得只改 Key 时被清空
                     editAi = false
                 }) { Text("保存") }
             },
@@ -474,60 +536,151 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     if (editStt) {
         AlertDialog(
             onDismissRequest = { editStt = false },
-            title = { Text("语音转写") },
+            title = { Text("听力转写") },
             text = {
-                Column {
+                Column(modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
                     Text(
-                        "听力题的音频要靠转写才能做题。DeepSeek 没有这个接口，所以要单独填一个能转写的服务（OpenAI、硅基流动、Groq 都行）；留空就用上面那套。",
+                        "听力题要先把音频转成文字。手机本地识别不联网、音频不出手机；云端就是你自己的转写接口（OpenAI / 硅基流动 / Groq 都行）。",
                         fontSize = 12.sp,
                     )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = sttBaseDraft,
-                        onValueChange = { sttBaseDraft = it },
-                        label = { Text("接口地址") },
-                        placeholder = { Text("https://api.openai.com/v1") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = sttKeyDraft,
-                        onValueChange = { sttKeyDraft = it },
-                        label = { Text("Key") },
-                        placeholder = { Text("留空表示沿用上面那套 Key") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = sttModelDraft,
-                        onValueChange = { sttModelDraft = it },
-                        label = { Text("转写模型名") },
-                        placeholder = { Text("whisper-1 / FunAudioLLM/SenseVoiceSmall") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        SttModeChip("手机本地", sttLocal) { sttLocal = true }
+                        Spacer(Modifier.width(8.dp))
+                        SttModeChip("云端接口", !sttLocal) { sttLocal = false }
+                    }
+                    Spacer(Modifier.height(12.dp))
+
+                    if (sttLocal) {
+                        val sizeMb = com.AusKa.ToolBox.chaoxing.LocalAsr.sizeMb()
+                        Text(
+                            if (modelReady)
+                                "模型已就绪（约 " + sizeMb + " MB）。断网也能转，音频不出这台手机。"
+                            else if (bundledInApk)
+                                "这个安装包里已经带了模型（约 " + sizeMb + " MB），点一下就地释放，不用联网。"
+                            else
+                                "首次使用要下载 SenseVoice 模型（约 " + sizeMb + " MB），下完一直可用，换手机要重下。",
+                            fontSize = 11.sp,
+                            color = palette.textTertiary,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        when {
+                            dlRunning -> {
+                                LinearProgressIndicator(
+                                    progress = { dlProgress },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "下载中 " + (dlProgress * 100).toInt() + "%（别杀后台，下完会自动校验）",
+                                    fontSize = 11.sp,
+                                )
+                            }
+                            modelReady -> TextButton(onClick = {
+                                com.AusKa.ToolBox.chaoxing.LocalAsr.clear(app)
+                                modelReady = false
+                                dlNote = ""
+                            }) { Text("删除模型，腾出空间", fontSize = 12.sp) }
+                            bundledInApk -> Row {
+                                TextButton(onClick = {
+                                    dlNote = ""
+                                    Thread { com.AusKa.ToolBox.chaoxing.LocalAsr.prepare(app) }.start()
+                                }) { Text("释放包内模型（不联网）", fontSize = 12.sp) }
+                                TextButton(onClick = { importPicker.launch(arrayOf("*/*")) }) {
+                                    Text("从手机文件导入", fontSize = 12.sp)
+                                }
+                            }
+                            else -> Row {
+                                TextButton(onClick = {
+                                    dlNote = ""
+                                    Thread { com.AusKa.ToolBox.chaoxing.LocalAsr.prepare(app) }.start()
+                                }) { Text("在线下载（" + sizeMb + " MB）", fontSize = 12.sp) }
+                                // 电脑上已经下好了就直接拷进手机，不依赖镜像、也不费流量
+                                TextButton(onClick = { importPicker.launch(arrayOf("*/*")) }) {
+                                    Text("从手机文件导入", fontSize = 12.sp)
+                                }
+                            }
+                        }
+                        if (modelReady && !dlRunning) {
+                            TextButton(onClick = { importPicker.launch(arrayOf("*/*")) }) {
+                                Text("换成别的模型文件（从本地导入）", fontSize = 12.sp)
+                            }
+                        }
+                        if (dlNote.isNotBlank()) {
+                            Text(dlNote, fontSize = 11.sp, color = palette.textTertiary)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "识别引擎 sherpa-onnx + SenseVoice（Apache-2.0），中英日韩粤一份模型搞定。",
+                            fontSize = 10.sp,
+                            color = palette.textTertiary,
+                        )
+                    } else {
+                        Text(
+                            "填一个 OpenAI 兼容的转写接口。留空地址就是「不转写」，听力题会明说没拿到原文。",
+                            fontSize = 11.sp,
+                            color = palette.textTertiary,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                            listOf(
+                                Triple("智谱", "https://open.bigmodel.cn/api/paas/v4", "glm-asr-2512"),
+                                Triple("SiliconFlow", "https://api.siliconflow.cn/v1", "FunAudioLLM/SenseVoiceSmall"),
+                                Triple("OpenAI", "https://api.openai.com/v1", "whisper-1"),
+                                Triple("Groq", "https://api.groq.com/openai/v1", "whisper-large-v3"),
+                            ).forEach { (name, b, m) ->
+                                TextButton(onClick = {
+                                    sttBaseDraft = b
+                                    sttModelDraft = m
+                                }) { Text(name, fontSize = 12.sp) }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = sttBaseDraft,
+                            onValueChange = { sttBaseDraft = it },
+                            label = { Text("接口地址") },
+                            placeholder = { Text("https://api.openai.com/v1") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = sttKeyDraft,
+                            onValueChange = { sttKeyDraft = it },
+                            label = { Text("Key") },
+                            placeholder = { Text("留空表示沿用 AI 那套 Key") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = sttModelDraft,
+                            onValueChange = { sttModelDraft = it },
+                            label = { Text("转写模型名") },
+                            placeholder = { Text("whisper-1 / FunAudioLLM/SenseVoiceSmall") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    ChaoxingStore.setSttBase(app, sttBaseDraft.trim())
-                    if (sttKeyDraft.isNotBlank()) ChaoxingStore.setSttKey(app, sttKeyDraft.trim())
-                    ChaoxingStore.setSttModel(app, sttModelDraft.trim())
+                    ChaoxingStore.setSttMode(
+                        app,
+                        if (sttLocal) ChaoxingStore.STT_LOCAL else ChaoxingStore.STT_CLOUD,
+                    )
+                    if (!sttLocal) {
+                        ChaoxingStore.setSttBase(app, sttBaseDraft.trim())
+                        if (sttKeyDraft.isNotBlank()) ChaoxingStore.setSttKey(app, sttKeyDraft.trim())
+                        ChaoxingStore.setSttModel(app, sttModelDraft.trim())
+                    }
                     editStt = false
                 }) { Text("保存") }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    ChaoxingStore.setSttBase(app, "")
-                    ChaoxingStore.setSttKey(app, "")
-                    ChaoxingStore.setSttModel(app, "")
-                    sttBaseDraft = ""
-                    sttKeyDraft = ""
-                    sttModelDraft = ""
-                    editStt = false
-                }) { Text("清空") }
+                TextButton(onClick = { editStt = false }) { Text("取消") }
             },
         )
     }
@@ -624,7 +777,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         onValueChange = { pvModel = it },
                         singleLine = true,
                         label = { Text("模型名", fontSize = 12.sp) },
-                        placeholder = { Text("deepseek-chat / qwen2.5:7b", fontSize = 12.sp) },
+                        placeholder = { Text("deepseek-flash / qwen2.5:7b", fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -758,6 +911,25 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
 }
 
+/** 转写方式二选一的小胶囊（本地 / 云端） */
+@Composable
+private fun SttModeChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    val palette = LocalGlassPalette.current
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (selected) palette.accent else palette.fieldFill)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    ) {
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            color = if (selected) palette.onAccent else palette.textSecondary,
+        )
+    }
+}
+
 /** Key 输入框；只有展开「高级」时才露模型名和接口地址 */
 @Composable
 private fun AiKeyFields(
@@ -769,7 +941,7 @@ private fun AiKeyFields(
     baseValue: String,
     onBase: (String) -> Unit,
     advanced: Boolean = false,
-    modelHint: String = "例如 deepseek-chat / gpt-4o-mini",
+    modelHint: String = "例如 deepseek-flash / gpt-4o-mini",
 ) {
     Column {
         OutlinedTextField(

@@ -83,7 +83,8 @@ internal data class AiResult(val text: String, val error: String = "") {
 internal object AiClient {
 
     const val DEFAULT_BASE = "https://api.deepseek.com/v1"
-    const val DEFAULT_MODEL = "deepseek-chat"
+    /** DeepSeek 现在的官方模型名是 deepseek-flash / deepseek-v4 / deepseek-v4-pro，deepseek-chat 已经下架 */
+    const val DEFAULT_MODEL = "deepseek-flash"
 
     private const val TIMEOUT_MS = 45_000
 
@@ -146,7 +147,8 @@ internal object AiClient {
         if (key.isBlank() || images.isEmpty()) return AiResult("", "")
         val parts = JSONArray().apply {
             put(JSONObject().put("type", "text").put("text", prompt))
-            images.take(3).forEach { url ->
+            // 图片已经压到几十 KB 一张，别再把第 4 张以后悄悄丢掉（多图题会少答一半）
+            images.take(6).forEach { url ->
                 put(
                     JSONObject()
                         .put("type", "image_url")

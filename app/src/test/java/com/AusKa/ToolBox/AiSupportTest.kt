@@ -28,6 +28,21 @@ class AiSupportTest {
     }
 
     @Test
+    fun badModelNameGivesReadableHint() {
+        // 截图里那条真实的 400：模型名不在服务商的清单里
+        val msg = "HTTP 400 {\"error\":{\"message\":\"The supported API model names are deepseek-flash, ...\"}}"
+        val friendly = AiSupport.friendly(msg)
+        assertTrue(friendly, friendly.contains("模型名") || friendly.contains("调整"))
+        assertTrue("不该把服务端原话吞掉", friendly.contains("deepseek-flash") || friendly.length > 6)
+    }
+
+    @Test
+    fun imageRejectionIsNotBlamedOnModelName() {
+        val friendly = AiSupport.friendly("HTTP 400 unknown variant image_url, expected text")
+        assertTrue(friendly, friendly.contains("图片"))
+    }
+
+    @Test
     fun noVisionErrorsAreDetected() {
         assertTrue(AiSupport.meansNoVision("HTTP 400 unknown variant image_url, expected text"))
         assertTrue(AiSupport.meansNoVision("This model does not support image input"))

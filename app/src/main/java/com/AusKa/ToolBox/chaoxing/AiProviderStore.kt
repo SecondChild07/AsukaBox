@@ -22,7 +22,7 @@ internal object AiProviderStore {
 
     /** 内置的那几条；「识图」两个后缀是给用户看的能力提示，选的时候不参与逻辑 */
     val defaults: List<AiProvider> = listOf(
-        AiProvider("deepseek", "DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
+        AiProvider("deepseek", "DeepSeek", "https://api.deepseek.com/v1", "deepseek-flash"),
         AiProvider("glm4v", "智谱 GLM-4V-Flash · 识图", "https://open.bigmodel.cn/api/paas/v4", "glm-4v-flash"),
         AiProvider("gemini", "Gemini 2.0 Flash · 识图", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash"),
         AiProvider("openrouter", "OpenRouter · 识图", "https://openrouter.ai/api/v1", "meta-llama/llama-3.2-11b-vision-instruct:free"),
