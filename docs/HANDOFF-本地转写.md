@@ -507,3 +507,22 @@ python tools/make_shots.py 首页.png 对话框.png docs/shots-2.2.png
 - 单测 154 条全绿（新增 `SolveGuardTest` 7 条）。
 
 坑：`mock_llm.py` 加了 `MOCK_DELAY` 环境变量（秒），测这类「答到一半」的场景要给切换留时间窗。
+
+## 2.1.2 发布踩坑：immutable release 的 tag 名是烧掉的
+
+给 2.1.1 出包时先直接 POST 了 published release，然后才发现没法传资产（immutable release 不允许改资产）。
+按「删 release → 删 tag → 建草稿传资产再发布」补救，结果发布 422：**tag 名 v2.1.1 已被永久占用**。
+GitHub 官方文档明确：开了 immutable releases 后，删掉 release 可以删 tag，但**同一个 tag 名不能再复用**（连仓库重建都挡）。
+
+以后发版的标准流程（这次 2.1.2 就是这么走的，一次通过）：
+
+1. 建草稿 release（`"draft": true`，tag 用没占用过的名字）；
+2. 往草稿上传全部资产（草稿期资产可换可删）；
+3. `PATCH draft=false` 发布，发布瞬间才变 immutable。
+
+另外：api.github.com 和 uploads.github.com 基本一直通，github.com:443 时通时断——push 失败就过几分钟重试，
+不必折腾代理；上传资产直接 http.client 打 uploads.github.com，281MB 只要 8 秒。
+
+产物：AsukaBox-2.1.2.apk（52MB 瘦包）/ AsukaBox-2.1.2-full.apk（281MB 完整包），
+签名 `86440fb7…40cf` 与 2.1 相同可覆盖升级；模型 zip 没变，release 正文里直接链到 v2.1 的资产。
+release 包冒烟：临时把 abiFilters 加 x86_64 出了个包在模拟器装上验证 R8 没砍坏界面（首页/学习通助手/各页正常），正式包只含 arm 两架构。
