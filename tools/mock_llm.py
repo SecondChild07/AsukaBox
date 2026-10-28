@@ -11,9 +11,14 @@ import os
 import re
 import sys
 import tempfile
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 LOG = os.path.join(tempfile.gettempdir(), "mock_llm.log")
+
+# 每题拖多久再回。测「答到一半换作业」时要给用户/脚本留出切换的时间窗口；
+# 平时留 0，跑一遍全流程不用等。
+DELAY = float(os.environ.get("MOCK_DELAY", "0") or 0)
 
 # 官方答案（用于验证回填顺序是否正确）
 SECTION = {
@@ -69,8 +74,10 @@ class Handler(BaseHTTPRequestHandler):
         prompt = "\n".join(texts)
 
         log("=" * 60)
-        log(f"model={req.get('model')} images={images} prompt_chars={len(prompt)}")
+        log(f"model={req.get('model')} images={images} prompt_chars={len(prompt)} t={time.strftime('%H:%M:%S')}")
         log(prompt[:900])
+        if DELAY > 0:
+            time.sleep(DELAY)
 
         if images:
             m = re.search(r"共\s*(\d+)\s*项", prompt)

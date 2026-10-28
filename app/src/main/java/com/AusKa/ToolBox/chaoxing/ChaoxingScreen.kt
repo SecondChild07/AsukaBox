@@ -129,10 +129,37 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
     // AI 答题的进行状态（只回填，不提交）
     var solving by remember { mutableStateOf(false) }
     var solveNote by remember { mutableStateOf("") }
-    // 接口不支持图片输入时弹一次，别让它悄悄答错
+    // 答题的轮次令牌：换作业 / 退出 / 手动停止时作废，在飞的回调据此自行退场
+    val solveGuard = remember { SolveGuard() }
 
     val signedIn = remember(snapshot) { CookieSnapshot.looksSignedIn(snapshot) }
     val webView = remember(context) { WebView(context) }
+
+    /**
+     * 停掉当前这一轮作答。
+     *
+     * 做题是「抽题 → 逐题问模型 → 回填」的异步链，停的时候不能只把按钮恢复：
+     * 已经在飞的线程还会算完、还会把答案点到当前页面上。令牌一停，它们全部作废。
+     */
+    fun cancelSolve(reason: String) {
+        val wasSolving = solving
+        val startedOn = solveGuard.started
+        solveGuard.stop()
+        if (!wasSolving) return
+        solving = false
+        solveNote = reason
+        // 半途停下的地址从「自动做过」里撤掉：再回到这一页会重新识别一遍，
+        // 已填的题按「本来就有答案」跳过，不会重复覆盖
+        if (startedOn.isNotEmpty()) autoSolved = autoSolved - startedOn
+    }
+
+    /** 主动跳转到某个地址：换了页面就先停下上一轮，别让旧答案落到新页面上 */
+    fun loadInWeb(target: String) {
+        val url = target.trim()
+        if (url.isBlank()) return
+        if (!solveGuard.stillOn(url)) cancelSolve("换了页面 · 上一轮作答已停止，重新识别题目")
+        webView.loadUrl(url)
+    }
 
     fun rememberSession() {
         val raw = readCookies()
@@ -163,6 +190,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
      * 清掉上一次扫出来的清单（那是上一个人的作业，留着容易看错）。
      */
     fun logout() {
+        // 先把在跑的作答停掉：不然退出登录后它还在后台问模型、还往残留页面里点
+        cancelSolve("已退出登录，作答停下")
         CookieManager.getInstance().apply {
             removeAllCookies(null)
             flush()
@@ -259,6 +288,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             scanNote = "这一条没拿到地址，先重新同步一次"
             return
         }
+        // 换作业的第一现场：上一份的作答链必须立刻停，否则它的答案会按题号填进这一份
+        cancelSolve("换作业了 · 上一份的作答已停止")
         scanning = false
         stage = SCAN_IDLE
         progress = ""
@@ -266,6 +297,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         openCourse = task.course
         urlText = url
         page = PAGE_WEB
+        // 同一个地址重新点开也要重新识别：可能上一轮填到一半被打断了
+        autoSolved = autoSolved - url
         webView.loadUrl(url)
     }
 
@@ -285,6 +318,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
      */
     fun solvePage() {
         if (solving) return
+        // 不在网页页就别开跑（自动识别有 900ms 延迟，这中间用户可能已经退回清单了）
+        if (page != PAGE_WEB) return
         val key = ChaoxingStore.aiKey(context)
         if (key.isBlank()) {
             solveNote = "先去「设置 → AI Key」填一条 key"
@@ -297,11 +332,18 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         val apiBase = ChaoxingStore.aiBase(context).ifBlank {
             AiEndpoints.baseFor(model) ?: AiClient.DEFAULT_BASE
         }
+        // 领号：从这一刻起，上一轮所有还没落地的回调都作废
+        val run = solveGuard.start(webView.url.orEmpty())
+        // 后台线程用：只查号码，不碰 WebView
+        fun alive() = solveGuard.alive(run)
+        // 主线程用：号码没变，页面也还是当初那一页，才允许动 DOM
+        fun here() = solveGuard.aliveOn(run, webView.url.orEmpty())
         // 一套模型同时做文字题和图片题。不按模型名预判能不能识图 —— 用户明确说过他的模型支持，
         // 少一次「先猜再跳过」的往返；真失败就留空并记进错误里，不再弹窗拦整页
         solving = true
         solveNote = "读取题目…"
         webView.evaluateJavascript(QuizScripts.QUESTIONS) { raw ->
+            if (!here()) return@evaluateJavascript
             val list = QuizParse.questions(unquote(raw))
             if (list.isEmpty()) {
                 solving = false
@@ -331,6 +373,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             var stepRef: ((Int) -> Unit)? = null
 
             fun applyText(q: QuizQuestion, parts: List<String>, at: Int, slot: Int) {
+                // 令牌作废（换了作业 / 停了）就整条链断在这里，别再往下填
+                if (!here()) return
                 if (slot >= parts.size) {
                     stats[0]++
                     stepRef?.invoke(at + 1)
@@ -342,6 +386,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     QuizScripts.fillJs(q.index, slot, parts[slot])
                 }
                 webView.evaluateJavascript(js) { result ->
+                    if (!here()) return@evaluateJavascript
                     val ok = unquote(result).contains("\"ok\":true")
                     val last = q.kind == "essay" || slot + 1 >= parts.size
                     if (last) {
@@ -354,6 +399,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             }
 
             fun applyAt(q: QuizQuestion, ans: QuizAnswer, at: Int, prev: List<String>, prevFilled: Int) {
+                if (!here()) return
                 // 模型常把「对/错」或某个选项原文当答案给回来，先对齐成页面上的字母
                 val letters = AnswerResolver.letters(q, ans)
                 val texts = AnswerResolver.texts(q, ans)
@@ -381,13 +427,16 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     }
                     if (have.isEmpty()) {
                         webView.evaluateJavascript(click) { result ->
+                            if (!here()) return@evaluateJavascript
                             if (unquote(result).contains("\"ok\":true")) stats[0]++ else stats[1]++
                             stepRef?.invoke(at + 1)
                         }
                     } else {
                         // 先取消旧的选择再点新的：多选题不清会越点越多
                         webView.evaluateJavascript(QuizExtra.clearJs(q.index)) {
+                            if (!here()) return@evaluateJavascript
                             webView.evaluateJavascript(click) { result ->
+                                if (!here()) return@evaluateJavascript
                                 if (unquote(result).contains("\"ok\":true")) {
                                     stats[0]++
                                     overwritten++
@@ -417,6 +466,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             // 图片题（听力作业把题面做成图）拿到的是「一组字母」：按空位顺序一个个填，
             // 整题只计一次成功/失败，避免把 7 个空算成 7 道题。
             fun applyLetters(q: QuizQuestion, values: List<String>, slot: Int, at: Int) {
+                if (!here()) return
                 val limit = minOf(values.size, maxOf(q.inputs, 1))
                 if (slot >= limit) {
                     stats[0]++
@@ -424,6 +474,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     return
                 }
                 webView.evaluateJavascript(QuizScripts.fillJs(q.index, slot, values[slot])) { result ->
+                    if (!here()) return@evaluateJavascript
                     val ok = unquote(result).contains("\"ok\":true")
                     val last = slot + 1 >= limit
                     if (last) {
@@ -435,7 +486,10 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                 }
             }
 
-            stepRef = { at ->
+            // 推进到第 at 题。写成具名函数（而不是直接给 stepRef 赋值）是为了能在里面提前 return ——
+            // 换作业、手动停止之后，这条链子就断在这里，剩下的题不再问、也不再回填。
+            fun advance(at: Int) {
+                if (!here()) return
                 if (at >= list.size) {
                     solving = false
                     val firstError = synchronized(errors) { errors.firstOrNull().orEmpty() }
@@ -459,16 +513,21 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                         val pageUrl = webView.url.orEmpty()
                         // 先读这一题现在的状态：已答且答案一样就不再动，避免把选好的取消掉
                         webView.evaluateJavascript(QuizExtra.currentJs(q.index)) { state ->
+                            if (!here()) return@evaluateJavascript
                             val prev = parseChecked(state)
                             val prevFilled = parseFilled(state)
                             Thread {
+                        // 后台线程只认令牌：作废了就安静收工（不写界面，也不往下填）
+                        if (!alive()) return@Thread
                         // 开跑前先花 1 秒验一次接口：模型名过期是最常见的失败原因，
                         // 以前是「先转写 2~3 分钟、再被 400 打回」，用户看到的就是「又慢又没填」。
                         if (at == 0 && !apiChecked) {
                             apiChecked = true
                             val probe = preflight(context, apiBase, key, model, wantVision = true)
+                            if (!alive()) return@Thread
                             if (probe.error.isNotBlank()) {
                                 webView.post {
+                                    if (!alive()) return@post
                                     solving = false
                                     solveNote = "AI 接口不能用：" + probe.error
                                     scanNote = "没开始答题，先把接口修好"
@@ -479,7 +538,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 val fixed = probe.model
                                 model = fixed
                                 ChaoxingStore.setAiModel(context, fixed)
-                                webView.post { solveNote = "模型名已自动改成 " + fixed }
+                                webView.post { if (alive()) solveNote = "模型名已自动改成 " + fixed }
                             }
                         }
                         // 听力题先转写，再把原文塞进同一次提问里 —— 之前是「先问、答不出来才转写」，
@@ -498,12 +557,16 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 apiBase = sttBase,
                                 key = sttKey2,
                                 sttModel = ChaoxingStore.sttModel(context),
-                                onNote = { msg -> webView.post { solveNote = msg } },
+                                onNote = { msg -> webView.post { if (alive()) solveNote = msg } },
+                                // 转写是这条链里最长的等待（下载 + 逐段推理），
+                                // 换了作业就别再白白算下去，每段之间查一次令牌
+                                isAlive = { alive() },
                             )
                         } else {
                             ""
                         }
-                        if (hasAudio && heard.isBlank()) webView.post { noTranscript++ }
+                        if (!alive()) return@Thread
+                        if (hasAudio && heard.isBlank()) webView.post { if (alive()) noTranscript++ }
                         // 题面是图片的（Section A/B 那种）：一次问整块，按空位顺序填字母
                         // 题库优先：命中的话直接用，不问模型（图片题先跳过题库，题面在图里对不上文本）
                         if (!picQuestion) {
@@ -515,7 +578,9 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 } else {
                                     QuizAnswer(texts = listOf(hit.answer), conf = 1.0)
                                 }
+                                // 回填前再验一次：这一题算得再对，页面换了就不能往上写
                                 webView.post {
+                                    if (!here()) return@post
                                     fromBank++
                                     applyAt(q, ans, at, prev, prevFilled)
                                 }
@@ -527,9 +592,11 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                             // 直接把这个地址丢给模型，模型那边是抓不到的（会回 4xx），所以先下成 base64 再发。
                             // 顺手缩图重编码：原图常是 1~3 MB 的 PNG，手机上传它是纯等
                             val inline = q.images.mapNotNull { u ->
+                                if (!alive()) return@mapNotNull null
                                 val bytes = HttpText.bytes(u, cookieFor(u), "https://mooc1.chaoxing.com/")
                                 if (bytes.isEmpty()) null else ImageInline.dataUri(bytes)
                             }
+                            if (!alive()) return@Thread
                             val reply = AiClient.chatImages(
                                 apiBase,
                                 key,
@@ -537,17 +604,22 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 QuizPrompt.vision(courseContext(), q.inputs, heard, q.stem),
                                 inline,
                             )
+                            if (!alive()) return@Thread
                             val values = AiParse.answers(reply.text)
                             if (values.isNotEmpty()) {
                                 // 只回了一部分（要 7 个只给 5 个）：照样填，但记一笔让用户自己核
-                                if (values.size < q.inputs) webView.post { uncertain++ }
-                                webView.post { applyLetters(q, values, 0, at) }
+                                if (values.size < q.inputs) webView.post { if (alive()) uncertain++ }
+                                webView.post {
+                                    if (!here()) return@post
+                                    applyLetters(q, values, 0, at)
+                                }
                                 return@Thread
                             }
                             // 拿到空答案就别再往下走文字那一路了：那等于同一道题再问一遍，
                             // 白等一轮（以前这里会掉下去，慢一倍）
                             if (!reply.ok) synchronized(errors) { if (errors.size < 3) errors.add(reply.error) }
                             webView.post {
+                                if (!here()) return@post
                                 uncertain++
                                 stepRef?.invoke(at + 1)
                             }
@@ -562,6 +634,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                             model,
                             QuizPrompt.user(q, courseContext(), heard),
                         )
+                        if (!alive()) return@Thread
                         if (!reply.ok) synchronized(errors) { if (errors.size < 3) errors.add(reply.error) }
                         var ans = AiParse.answer(reply.text)
                         if (ans.conf < 0.8 && ans.letters.isNotEmpty()) {
@@ -571,21 +644,26 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                                 model,
                                 QuizPrompt.retry(q, courseContext(), heard),
                             )
+                            if (!alive()) return@Thread
                             if (!second.ok) synchronized(errors) { if (errors.size < 3) errors.add(second.error) }
                             val ans2 = AiParse.answer(second.text)
                             if (ans2.conf >= ans.conf) ans = ans2
                         }
                         // 两轮都不太确定：照样填（用户要的是先填上，自己再核），只是标记出来
                         if (ans.letters.isNotEmpty() && ans.conf < 0.9) {
-                            webView.post { uncertain++ }
+                            webView.post { if (alive()) uncertain++ }
                         }
                         val finalAns = ans
-                        webView.post { applyAt(q, finalAns, at, prev, prevFilled) }
+                        webView.post {
+                            if (!here()) return@post
+                            applyAt(q, finalAns, at, prev, prevFilled)
+                        }
                             }.start()
                         }
                     }
                 }
             }
+            stepRef = { at -> advance(at) }
             stepRef?.invoke(0)
         }
     }
@@ -595,6 +673,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
      *
      * 只在「确实配了 Key」且「这个地址还没自动做过」时触发一次，
      * 页面重排 / onPageFinished 多次回调都不会重复刷题。
+     * 换作业时这一步就是「重新识别题目」的入口：上一轮已被 cancelSolve 停掉，
+     * 新页面加载完这里重新抽一遍题、重新开做。
      */
     fun maybeAutoSolve(url: String) {
         if (url.isBlank()) return
@@ -608,11 +688,16 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         if (!u.contains("/work/") && !u.contains("/exam")) return
         autoSolved = autoSolved + url
         webView.evaluateJavascript(QuizScripts.QUESTIONS) { raw ->
+            // 抽题的这一小会儿页面可能又跳走了（用户点得快），地址对不上就别开跑
+            if (SolveGuard.key(webView.url.orEmpty()) != SolveGuard.key(url)) return@evaluateJavascript
             val qs = QuizParse.questions(unquote(raw))
             val answerable = qs.any { it.options.isNotEmpty() || it.inputs > 0 || it.editor }
             if (answerable) {
                 solveNote = "检测到作答页 · 自动开始（只填不交）"
-                webView.postDelayed({ if (!solving) solvePage() }, 900L)
+                webView.postDelayed({
+                    val now = SolveGuard.key(webView.url.orEmpty())
+                    if (!solving && page == PAGE_WEB && now == SolveGuard.key(url)) solvePage()
+                }, 900L)
             } else {
                 autoSolved = autoSolved - url
             }
@@ -715,6 +800,8 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
 
     fun startScan() {
         if (scanning) return
+        // 扫描要把课程列表装进同一个 WebView，等于把正在答的页面换掉，先把作答停掉
+        cancelSolve("开始同步清单 · 作答已停止")
         scanning = true
         stage = SCAN_COURSES
         cursor = 0
@@ -813,6 +900,12 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String?) {
+                // 页面换了（点了「下一题」、回到作业列表、或者干脆开了另一份作业）：
+                // 先把上一轮作答停掉，再让下面的 maybeAutoSolve 对着新页面重新识别一遍。
+                // 判据用 view.url（主框架地址），iframe 加载完也会回调这里，但地址不变，不会误停。
+                if (solving && !solveGuard.stillOn(view.url.orEmpty())) {
+                    cancelSolve("已换作业 · 上一份的作答已停止，重新识别题目")
+                }
                 view.scrollTo(0, 0)
                 view.evaluateJavascript(ChaoxingScripts.BOOTSTRAP, null)
                 view.evaluateJavascript(ChaoxingScripts.SCROLL_TOP, null)
@@ -855,7 +948,12 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         }
 
         webView.loadUrl(ChaoxingScripts.LOGIN_URL)
-        onDispose { webView.destroy() }
+        onDispose {
+            // 离开这个页面（换 tab / 退出）也要停：WebView 马上要被销毁，
+            // 还在飞的作答线程不该再往一个死掉的页面上打 JS
+            solveGuard.stop()
+            webView.destroy()
+        }
     }
 
     // 先把上次扫到的清单铺出来，别让人对着空白等同步
@@ -879,12 +977,27 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    // 回到答题页时补一次识别：离开时停过一轮，回来不该是一片空白、也不该什么提示都没有。
+    // 延迟一下再判：从清单点进来时 loadUrl 还没落地，这会儿读到的还是上一页的地址。
+    LaunchedEffect(page) {
+        if (page != PAGE_WEB || solving) return@LaunchedEffect
+        val at = webView.url.orEmpty()
+        if (at.isBlank()) return@LaunchedEffect
+        webView.postDelayed({
+            val now = SolveGuard.key(webView.url.orEmpty())
+            if (page == PAGE_WEB && !solving && now == SolveGuard.key(at)) maybeAutoSolve(at)
+        }, 1_200L)
+    }
+
     BackHandler(enabled = page == PAGE_WEB) {
         if (scanning) {
             cancelScan()
         } else if (webView.canGoBack()) {
+            // 返回上一页通常就是「退回作业列表」：先停作答，别让旧答案跟着倒回去的页面跑
+            cancelSolve("离开答题页 · 作答已停止")
             webView.goBack()
         } else {
+            cancelSolve("离开答题页 · 作答已停止")
             page = PAGE_HOME
         }
     }
@@ -962,16 +1075,31 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     solving = solving,
                     solveNote = solveNote,
                     onUrlChange = { urlText = it },
-                    onBack = { if (scanning) cancelScan() else page = PAGE_HOME },
-                    onRefresh = { webView.reload() },
+                    onBack = {
+                        if (scanning) {
+                            cancelScan()
+                        } else {
+                            cancelSolve("离开答题页 · 作答已停止")
+                            page = PAGE_HOME
+                        }
+                    },
+                    onRefresh = {
+                        // 刷新等于把题目全换掉：旧链上的回填必须作废
+                        cancelSolve("页面已刷新 · 上一轮作答已停止")
+                        webView.reload()
+                    },
                     onProbe = { runProbe() },
                     onScan = { scanPageOnly() },
                     onSolve = { solvePage() },
+                    onStop = { cancelSolve("已手动停止 · 想接着做再点「开始答题」") },
                     onPrev = { webView.evaluateJavascript("window.scrollBy(0,-620)", null) },
                     onNext = { webView.evaluateJavascript("window.scrollBy(0,620)", null) },
-                    onList = { page = PAGE_HOME },
-                    onOpenFrame = { webView.loadUrl(it) },
-                    onOpenUrl = { if (urlText.isNotBlank()) webView.loadUrl(urlText.trim()) },
+                    onList = {
+                        cancelSolve("回清单了 · 作答已停止")
+                        page = PAGE_HOME
+                    },
+                    onOpenFrame = { loadInWeb(it) },
+                    onOpenUrl = { loadInWeb(urlText) },
                 )
             }
         }
@@ -1346,6 +1474,7 @@ private fun WebPane(
     onProbe: () -> Unit,
     onScan: () -> Unit,
     onSolve: () -> Unit,
+    onStop: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onList: () -> Unit,
@@ -1417,11 +1546,11 @@ private fun WebPane(
             )
             Spacer(Modifier.weight(1f))
             GlassButton(
-                text = if (solving) "答题中…" else "开始答题",
-                onClick = onSolve,
-                modifier = Modifier.width(92.dp),
+                // 答题中这个位置变成「停止」：发现认错作业了能当场掐掉，不用等它把整页填完
+                text = if (solving) "停止答题" else "开始答题",
+                onClick = if (solving) onStop else onSolve,
+                modifier = Modifier.width(86.dp),
                 height = 32.dp,
-                enabled = !solving,
             )
             Spacer(Modifier.width(6.dp))
             GlassButton(
@@ -1630,7 +1759,10 @@ private fun transcribeAudio(
     key: String,
     sttModel: String = "",
     onNote: (String) -> Unit = {},
+    /** 换作业 / 停止作答后返回 false：下载和逐段转写都是长活，别让它白跑完 */
+    isAlive: () -> Boolean = { true },
 ): String {
+    if (!isAlive()) return ""
     // 同一个作业里几个填空块共用同一批音频，不缓存的话每块都会重下一遍（8 段 mp3 × 3 块）
     synchronized(audioCache) { audioCache[raw] }?.let { return it }
     val urls = if (raw.startsWith("object:")) {
@@ -1661,6 +1793,7 @@ private fun transcribeAudio(
                 onNote("语音模型没准备好：" + LocalAsr.error())
                 return ""
             }
+            if (!isAlive()) return ""
             local = true
         }
     }
@@ -1679,6 +1812,8 @@ private fun transcribeAudio(
     }
 
     blobs.forEach { b ->
+        // 换作业了就别再开新的一段：一段本地推理也要几秒，白算没有意义
+        if (!isAlive()) return ""
         val bytes = b ?: return@forEach
         if (bytes.isEmpty()) return@forEach
         val model = sttModel.ifBlank { "whisper-1" }
@@ -1701,6 +1836,7 @@ private fun transcribeAudio(
             var done = 0
             while (queue.isNotEmpty()) {
                 val c = queue.removeAt(0)
+                if (!isAlive()) return ""
                 done++
                 onNote("本地转写 " + done + "/" + total + " 段…")
                 val samples = AudioChunks.toMono16k(AudioChunks.pcmOf(c.wav), c.sampleRate, c.channels)
@@ -1712,6 +1848,7 @@ private fun transcribeAudio(
             }
         } else {
             chunks.forEach { c ->
+                if (!isAlive()) return ""
                 val text = AiClient.transcribe(apiBase, key, c.wav, model, "a.wav")
                 if (text.isNotBlank()) {
                     if (sb.isNotEmpty()) sb.append('\n')
