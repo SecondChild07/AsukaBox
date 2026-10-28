@@ -65,8 +65,8 @@ android {
         applicationId = "com.AusKa.ToolBox"
         minSdk = 24
         targetSdk = 37
-        versionCode = 210
-        versionName = "2.1"
+        versionCode = 211
+        versionName = "2.1.1"
 
         // 空字符串 = 未配置签名，运行时跳过签名校验
         buildConfigField("String", "CERT_SHA256", "\"$certSha256\"")
