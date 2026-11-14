@@ -87,6 +87,9 @@ fun TimetableScreen(
     // 启动时的后台同步会更新 store 里的 flow，这里跟着变
     val timetable by store.timetableFlow.collectAsState()
     val syncOk by store.syncOkFlow.collectAsState()
+    // 进这个页面就重读一次盘：进程被系统回收再起来时，内存里那张表是空的，
+    // 而用户的理解是「课表被清了」。reload() 不会用 null 覆盖已有的表。
+    LaunchedEffect(Unit) { store.reload() }
     var week by remember { mutableStateOf(0) }
     var showImport by remember { mutableStateOf(false) }
     var showCalibrate by remember { mutableStateOf(false) }
@@ -105,7 +108,10 @@ fun TimetableScreen(
     ) {
         val current = timetable
         if (current == null) {
-            EmptyTimetable(onImport = { showImport = true })
+            EmptyTimetable(
+                onImport = { showImport = true },
+                broken = store.hasUnreadable(),
+            )
         } else {
             val t = current
             WeekHeader(
@@ -172,7 +178,7 @@ private fun weekOf(t: Timetable?): Int {
 }
 
 @Composable
-private fun EmptyTimetable(onImport: () -> Unit) {
+private fun EmptyTimetable(onImport: () -> Unit, broken: Boolean = false) {
     val palette = LocalGlassPalette.current
     Column(
         Modifier
@@ -190,15 +196,21 @@ private fun EmptyTimetable(onImport: () -> Unit) {
         ) {
             Column {
                 Text(
-                    text = "还没有课表",
+                    // 有密文却解不开 ≠ 没有课表。这两句话必须分开，否则用户会以为数据是自己丢的
+                    text = if (broken) "课表读不出来了" else "还没有课表",
                     color = palette.textPrimary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "填学校教务系统的地址和账号，直接从正方抓这学期的课表。\n" +
-                        "只在你点「导入」的时候联网，抓完就存本地，平时不连。",
+                    text = if (broken) {
+                        "本机还留着课表的密文，但系统的加密钥匙被重置了，现在解不开。\n" +
+                            "本地镜像若还在会自动恢复；恢复不了就重新导入一次（设置 → 数据自检 能看到状态）。"
+                    } else {
+                        "填学校教务系统的地址和账号，直接从正方抓这学期的课表。\n" +
+                            "只在你点「导入」的时候联网，抓完就存本地，平时不连。"
+                    },
                     color = palette.textSecondary,
                     fontSize = 12.sp,
                     lineHeight = 19.sp,

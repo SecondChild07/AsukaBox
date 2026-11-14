@@ -41,6 +41,7 @@ import com.AusKa.ToolBox.data.Author
 import com.AusKa.ToolBox.chaoxing.AiEndpoints
 import com.AusKa.ToolBox.chaoxing.AiProvider
 import com.AusKa.ToolBox.chaoxing.AiProviderStore
+import com.AusKa.ToolBox.chaoxing.CookieSnapshot
 import com.AusKa.ToolBox.data.ChaoxingStore
 import com.AusKa.ToolBox.data.SectionTimesStore
 import com.AusKa.ToolBox.data.TimetableStore
@@ -48,6 +49,7 @@ import com.AusKa.ToolBox.data.UrlStore
 import com.AusKa.ToolBox.glass.GlassPalette
 import com.AusKa.ToolBox.glass.LiquidGlass
 import com.AusKa.ToolBox.glass.LocalGlassPalette
+import com.AusKa.ToolBox.security.SecretBox
 
 /**
  * 设置页。
@@ -109,6 +111,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     // 上课时间：12 节的开始/结束，改完立刻落盘并刷新课表
     var editTimes by remember { mutableStateOf(false) }
     var timeDraft by remember { mutableStateOf(listOf<Pair<String, String>>()) }
+    var healthOpen by remember { mutableStateOf(false) }
     val hasAccount = ttStore.hasAccount
 
     // 从手机里挑模型文件（支持多选两个文件，或选一个 zip）
@@ -254,6 +257,15 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     )
                 }
                 GlassDivider()
+                // 存了密文就得能自证：哪一项在、哪一项读不出来，用户自己也能看见
+                GlassRow(
+                    title = "数据自检",
+                    subtitle = if (ttStore.hasUnreadable()) "有数据读不出来了，点开看原因" else "本机存了哪些东西、能不能读出来",
+                    value = if (ttStore.hasUnreadable()) "异常" else "看看",
+                    onClick = { healthOpen = true },
+                    trailingArrow = true,
+                )
+                GlassDivider()
                 GlassRow(
                     title = "作者主页",
                     subtitle = Author.URL.removePrefix("https://"),
@@ -275,6 +287,23 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         )
 
         Spacer(Modifier.height(26.dp))
+    }
+
+    if (healthOpen) {
+        AlertDialog(
+            onDismissRequest = { healthOpen = false },
+            title = { Text("数据自检") },
+            text = {
+                Text(
+                    text = healthReport(app, ttStore, urlStore),
+                    fontSize = 12.sp,
+                    lineHeight = 19.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { healthOpen = false }) { Text("知道了") }
+            },
+        )
     }
 
     if (confirmWipe) {
@@ -994,3 +1023,44 @@ private fun loadTimes(context: android.content.Context): List<Pair<String, Strin
     (1..SectionTimesStore.SECTIONS).map {
         SectionTimesStore.start(context, it) to SectionTimesStore.end(context, it)
     }
+/**
+ * 「数据自检」的正文。
+ *
+ * 存在的理由：加密存储坏掉时，旧实现的表现是「数据凭空消失」——用户没法判断是自己手滑删了、
+ * 还是系统把钥匙重置了，也没法告诉我们。这里把四项状态摊开：加密层能不能用、
+ * 哪一条存了、哪一条读不出来。
+ */
+private fun healthReport(
+    context: android.content.Context,
+    ttStore: TimetableStore,
+    urlStore: UrlStore,
+): String {
+    val link = urlStore.url
+    val linkState = when {
+        urlStore.unreadable -> "有密文但读不出来"
+        link.isNotBlank() -> "已存"
+        else -> "未存"
+    }
+    val session = ChaoxingStore.cookieSnapshot(context)
+    val sessionState = when {
+        session.isBlank() -> "未登录"
+        CookieSnapshot.looksSignedIn(session) -> "已存"
+        else -> "存了，但没有会话项"
+    }
+    val account = when {
+        ttStore.hasAccount -> "已存（" + ttStore.username + "）"
+        ttStore.hasUnreadable() -> "账号读不出来"
+        else -> "未存"
+    }
+    return listOf(
+        "加密层：" + SecretBox.statusLine(),
+        "签到链接：" + linkState,
+        "教务账号：" + account,
+        ttStore.healthLine(),
+        "学习通会话：" + sessionState,
+        "",
+        "说明：加密用的主钥匙由系统托管。刷机、改锁屏凭据、部分 ROM 的清理策略都会让它失效。" +
+            "课表和签到链接现在有兜底副本和本地镜像，失效后会自动读回来；" +
+            "教务密码、AI Key 只走主钥匙，失效后需要重新填一次。",
+    ).joinToString("\n")
+}

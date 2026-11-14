@@ -50,12 +50,19 @@ fun SignScreen(
     val reader = remember { NfcReader(activity) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    var savedUrl by remember { mutableStateOf(store.url) }
+    // 读一次就够：store.url 的 getter 会顺手把「解不开」的状态挂到 store.unreadable 上
+    val restored = remember { store.url }
+    val broken = remember { store.unreadable }
+    var savedUrl by remember { mutableStateOf(restored) }
     var record by remember { mutableStateOf("正在检测 NFC…") }
     var status by remember {
         mutableStateOf(
-            if (store.url.isBlank()) "等待贴卡，或长按「签到」手动输入"
-            else "已载入本地保存的链接，点「签到」即可，无需重新贴卡"
+            when {
+                // 有密文却解不开：说明系统重置了本机的加密钥匙。别装作「没存过」，让用户知道要重来一次
+                broken -> "本机存的链接读不出来了（系统重置了加密密钥）· 重新贴卡或长按「签到」输入"
+                restored.isBlank() -> "等待贴卡，或长按「签到」手动输入"
+                else -> "已载入本地保存的链接，点「签到」即可，无需重新贴卡"
+            }
         )
     }
     var showInput by remember { mutableStateOf(false) }
