@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -125,6 +126,12 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
     var openCourse by remember { mutableStateOf("") }
     // 自动做过题的地址，避免 onPageFinished 多次回调把同一页反复刷
     var autoSolved by remember { mutableStateOf(emptySet<String>()) }
+    // 网页层失败：网络不通 / 域名解析不了 / 页面压根没起来。以前这些只会变成一张空白页
+    var webError by remember { mutableStateOf("") }
+    // 落地在登录页 = 会话过期。「作业点进去是登录页」是最常被当成「进不去」的那种
+    var loginExpired by remember { mutableStateOf(false) }
+    // 这一轮扫描里「没读到」的课程数（读不到 ≠ 没有作业）
+    var scanFails by remember { mutableStateOf(0) }
 
     // AI 答题的进行状态（只回填，不提交）
     var solving by remember { mutableStateOf(false) }
@@ -170,6 +177,38 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         ChaoxingStore.saveCookieSnapshot(context, raw)
     }
 
+    /**
+     * 把快照里的会话补到目标地址所在的域上。
+     *
+     * 只在 xxx.chaoxing.com 内生效：不往外部站点写任何 cookie。
+     * 返回 false 表示补完仍然没有会话项（用户确实该重新登录了）。
+     */
+    fun hydrateSessionFor(target: String): Boolean {
+        val host = runCatching { java.net.URI(target).host.orEmpty() }.getOrNull().orEmpty()
+        if (host.isEmpty() || !host.endsWith("chaoxing.com")) return false
+        val raw = ChaoxingStore.cookieSnapshot(context)
+        val wanted = if (raw.isBlank()) {
+            emptyList()
+        } else {
+            CookieSnapshot.decode(raw).filter { it.first.endsWith("chaoxing.com") }
+        }
+        if (wanted.isNotEmpty()) {
+            val manager = CookieManager.getInstance()
+            val head = CookieSnapshot.mergeHead(wanted.map { it.second })
+            head.split(';').forEach { piece ->
+                val kv = piece.trim()
+                if (kv.isNotEmpty()) manager.setCookie(target, kv)
+            }
+            manager.flush()
+        }
+        val live = runCatching { CookieManager.getInstance().getCookie(target) }.getOrNull().orEmpty()
+        // 判据放宽一点：超星并不是每个子域都下发 _uid，只要「快照里有会话」且「这个域已经拿到
+        // cookie」就算补上了；两者都没有才算真过期。宁可不报，也别对着正常的页面喊过期。
+        val snapOk = CookieSnapshot.looksSignedIn(raw)
+        val liveOk = CookieSnapshot.looksSignedIn("v1\t" + host + "\t" + live)
+        return liveOk || (snapOk && live.isNotEmpty())
+    }
+
     fun restoreSession() {
         val raw = ChaoxingStore.cookieSnapshot(context)
         if (raw.isBlank()) return
@@ -180,6 +219,10 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                 if (kv.isNotEmpty()) manager.setCookie("https://$host", kv)
             }
         }
+        // 只按「快照里那个域名」写回是不够的：超星各子域之间常常互不认 cookie，
+        // 而从清单点开作业会落到 mooc1 / mooc1-1 / mooc2-ans 里的另一个域上 ——
+        // 那一步就是用户说的「作业点不进去」，其实是被踢回登录页了。
+        CS_HOSTS.forEach { hydrateSessionFor("https://$it") }
         manager.flush()
     }
 
@@ -222,6 +265,13 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             val info = parseProbe(json)
             probeText = info.text
             frameSrc = info.frame
+            // 顶层一条题都没有、却挂着 iframe：题在跨域内嵌页里，注入脚本进不去。
+            // 光靠页面没反应，用户只会说「作业进不去」；这里直接告诉他点哪个按钮
+            if (page == PAGE_WEB && !solving && solveNote.isEmpty() &&
+                info.frames > 0 && info.questions == 0 && frameSrc.isNotEmpty()
+            ) {
+                solveNote = "题目在内嵌页里 · 点右下「进工作区」把作答页提到顶层"
+            }
         }
     }
 
@@ -273,10 +323,13 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         if (pending > 0) return
         val total = if (scanned.isNotEmpty()) scanned.size else tasks.size
         finishScan(
-            if (total == 0) {
-                "扫完 " + courses.size + " 门课，没读到作业（这门课可能真没有）"
-            } else {
-                "扫完 " + courses.size + " 门课 · 共 " + total + " 条"
+            when {
+                // 一门都没读到、而且确实有请求失败：别骗自己说「没有作业」
+                total == 0 && scanFails > 0 ->
+                    "扫完 " + courses.size + " 门课 · " + scanFails + " 门没读到（会话过期或被风控拦了，重新登录再同步）"
+                total == 0 -> "扫完 " + courses.size + " 门课，没读到作业（这门课可能真没有）"
+                scanFails > 0 -> "扫完 " + courses.size + " 门课 · 共 " + total + " 条（" + scanFails + " 门没读到）"
+                else -> "扫完 " + courses.size + " 门课 · 共 " + total + " 条"
             }
         )
     }
@@ -297,8 +350,17 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         openCourse = task.course
         urlText = url
         page = PAGE_WEB
+        webError = ""
+        loginExpired = false
         // 同一个地址重新点开也要重新识别：可能上一轮填到一半被打断了
         autoSolved = autoSolved - url
+        // 作业页可能落在另一个子域上：先把快照里的会话补过去，否则打开就是登录页
+        val hasSession = hydrateSessionFor(url)
+        if (!hasSession) {
+            solveNote = "学习通会话已过期 · 回清单点「登录学习通」重新登一次，再点作业"
+        } else {
+            solveNote = ""
+        }
         webView.loadUrl(url)
     }
 
@@ -727,6 +789,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
             val workHtml = HttpText.get(workUrl, cookieFor(workUrl), referer)
             val examHtml = HttpText.get(examUrl, cookieFor(examUrl), referer)
             val workRows = if (workHtml.isEmpty() || WorkHtml.looksLikeLogin(workHtml)) {
+                scanFails = scanFails + 1
                 emptyList()
             } else {
                 WorkHtml.parse(workHtml, course.name, false)
@@ -749,6 +812,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         } else {
             // 【9010】操作异常，请输入图片中的验证码 —— 请求被风控了，记下来
             if (middle.contains("验证码") || middle.contains("9010")) captcha = true
+            scanFails = scanFails + 1
             if (BuildConfig.DEBUG) {
                 android.util.Log.d(
                     "CSScan",
@@ -814,6 +878,7 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         courseTries = 0
         pending = 0
         captcha = false
+        scanFails = 0
         // 扫描全程在后台跑，不把用户拽进网页页
         page = PAGE_HOME
         webView.loadUrl(ChaoxingUrls.COURSE_LIST)
@@ -906,6 +971,26 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                 if (solving && !solveGuard.stillOn(view.url.orEmpty())) {
                     cancelSolve("已换作业 · 上一份的作答已停止，重新识别题目")
                 }
+                // 被踢回登录页：这是「作业进不去」最常见的样子。不说明的话，
+                // 用户看到的就是一个登录框，以为 App 坏了
+                val landed = view.url.orEmpty()
+                val onLogin = landed.contains("passport2.chaoxing.com") || landed.contains("/login")
+                if (onLogin && page == PAGE_WEB) {
+                    // 是「过期」还是「还没登录」，措辞要分开：
+                    // 新用户点「登录学习通」时页面本来就是登录页，说「已过期」会让人以为出错了
+                    val everSignedIn = snapshot.isNotBlank()
+                    val fromTask = openTitle.isNotEmpty()
+                    loginExpired = everSignedIn || fromTask
+                    if (!scanning && loginExpired) {
+                        solveNote = if (everSignedIn) {
+                            "学习通登录已过期 · 在这一页重新登录一次，登完回清单同步"
+                        } else {
+                            "还没登录 · 在这一页登录一次，登完回清单同步"
+                        }
+                    }
+                } else if (!onLogin) {
+                    loginExpired = false
+                }
                 view.scrollTo(0, 0)
                 view.evaluateJavascript(ChaoxingScripts.BOOTSTRAP, null)
                 view.evaluateJavascript(ChaoxingScripts.SCROLL_TOP, null)
@@ -929,6 +1014,26 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     runProbe()
                     maybeAutoSolve(url.orEmpty())
                 }
+            }
+
+            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                // 新的一页开始加载：上一次的错误提示就过期了
+                webError = ""
+            }
+
+            /**
+             * 主框架加载失败（域名解析不了、连不上、超时、证书不对）。
+             *
+             * 以前这里什么都不做，WebView 会显示一张 Chromium 的英文错误页 ——
+             * 用户看到的只是「一片空白 / 一段英文」，既不知道是哪一步坏了，也不知道该点哪里。
+             */
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError,
+            ) {
+                if (!request.isForMainFrame) return
+                webError = webErrorText(error.errorCode, request.url.toString())
             }
 
             override fun shouldOverrideUrlLoading(
@@ -1008,10 +1113,16 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         WebSurface(
             webView = webView,
             modifier = if (page == PAGE_WEB) {
-                // 顶部让出工具栏和地址行的高度，否则页面的标题栏和提交按钮会被压住
+                // 顶部让出工具栏和地址行的高度，否则页面的标题栏和提交按钮会被压住；
+                // 出现「加载失败」提示条时再让出一行，别让页面标题被压在提示条底下
                 Modifier
                     .fillMaxSize()
-                    .padding(start = 14.dp, end = 14.dp, top = 108.dp, bottom = 46.dp)
+                    .padding(
+                        start = 14.dp,
+                        end = 14.dp,
+                        top = if (webError.isEmpty()) 108.dp else 154.dp,
+                        bottom = 46.dp,
+                    )
             } else {
                 Modifier.size(1.dp)
             },
@@ -1069,6 +1180,13 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
                     probeText = probeText,
                     frameSrc = frameSrc,
                     urlText = urlText,
+                    webError = webError,
+                    loginExpired = loginExpired,
+                    onRelogin = {
+                        // 登录页就在眼前，一键回去比让人自己找「返回」快
+                        urlText = ChaoxingScripts.LOGIN_URL
+                        loadInWeb(ChaoxingScripts.LOGIN_URL)
+                    },
                     scanning = scanning,
                     progress = if (openTitle.isEmpty()) progress else openTitle,
                     scanLog = scanLog,
@@ -1463,6 +1581,9 @@ private fun WebPane(
     probeText: String,
     frameSrc: String,
     urlText: String,
+    webError: String,
+    loginExpired: Boolean,
+    onRelogin: () -> Unit,
     scanning: Boolean,
     progress: String,
     scanLog: List<String>,
@@ -1536,6 +1657,41 @@ private fun WebPane(
             Spacer(Modifier.height(6.dp))
         }
 
+        if (webError.isNotEmpty()) {
+            LiquidGlass(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                blurRadius = 12.dp,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(palette.danger)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = webError,
+                        color = palette.textSecondary,
+                        fontSize = 10.sp,
+                        lineHeight = 15.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    GlassButton(
+                        text = "刷新",
+                        onClick = onRefresh,
+                        modifier = Modifier.width(56.dp),
+                        height = 28.dp,
+                        kind = GlassButtonKind.Ghost,
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             GlassButton(
                 text = "返回",
@@ -1572,11 +1728,16 @@ private fun WebPane(
         if (solveNote.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = solveNote,
-                color = palette.textSecondary,
+                text = if (loginExpired) solveNote + "（点这里重新登录）" else solveNote,
+                color = if (loginExpired) palette.accent else palette.textSecondary,
                 fontSize = 10.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = if (loginExpired) {
+                    Modifier.clickable { onRelogin() }
+                } else {
+                    Modifier
+                },
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -1668,7 +1829,13 @@ private class CsBridge(private val onMessage: (String) -> Unit) {
     }
 }
 
-private data class ProbeInfo(val text: String, val frame: String)
+private data class ProbeInfo(
+    val text: String,
+    val frame: String,
+    /** 顶层文档里的题目数；跨域 iframe 里的题这里永远是 0 */
+    val questions: Int = 0,
+    val frames: Int = 0,
+)
 
 private fun parseProbe(json: String): ProbeInfo {
     if (json.isBlank()) return ProbeInfo("", "")
@@ -1707,7 +1874,12 @@ private fun parseProbe(json: String): ProbeInfo {
                 }
             }
         }
-        ProbeInfo(text, src)
+        ProbeInfo(
+            text = text,
+            frame = src,
+            questions = o.optInt("questions"),
+            frames = o.optInt("hasFrames"),
+        )
     } catch (e: Exception) {
         ProbeInfo(json.take(80), "")
     }
@@ -1717,6 +1889,8 @@ private val CS_HOSTS = listOf(
     "i.chaoxing.com",
     "passport2.chaoxing.com",
     "mooc1.chaoxing.com",
+    "mooc1-1.chaoxing.com",
+    "mooc2.chaoxing.com",
     "mooc2-ans.chaoxing.com",
     "www.chaoxing.com",
 )
@@ -1996,3 +2170,18 @@ private fun parseFilled(raw: String): Int = runCatching {
     org.json.JSONObject(raw.trim().removeSurrounding("\"").replace("\\\"", "\""))
         .optInt("filled", 0)
 }.getOrDefault(0)
+
+/** 把 WebView 的错误码翻成人话 —— 用户能看懂，我们也知道下一步该查什么 */
+private fun webErrorText(code: Int, url: String): String {
+    val host = runCatching { java.net.URI(url).host.orEmpty() }.getOrNull().orEmpty()
+    val where = if (host.isEmpty()) "这个地址" else host
+    return when (code) {
+        WebViewClient.ERROR_HOST_LOOKUP -> "解析不到 " + where + " · 换个网络（校园网多半要先认证）"
+        WebViewClient.ERROR_CONNECT, WebViewClient.ERROR_TIMEOUT ->
+            "连不上 " + where + " · 网络不通或学校站点临时抽风"
+        WebViewClient.ERROR_FAILED_SSL_HANDSHAKE -> where + " 的证书有问题，连不上"
+        WebViewClient.ERROR_UNSUPPORTED_SCHEME -> "这不是一个网页地址：" + where
+        WebViewClient.ERROR_UNKNOWN -> "页面加载失败 · 点「刷新」再试一次"
+        else -> "页面加载失败（错误码 " + code + "）· 点「刷新」再试一次"
+    }
+}
