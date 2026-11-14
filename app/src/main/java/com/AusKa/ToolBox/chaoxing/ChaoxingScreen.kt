@@ -1346,7 +1346,13 @@ private fun HomePane(
                 title = if (tab == 0) "未完成" else "已完成",
                 count = if (tab == 0) pending.size else finished.size,
                 items = if (tab == 0) pending else finished,
-                empty = if (tab == 0) "没有未完成的作业或考试" else "还没有已完成的记录",
+                empty = when {
+                    // 没登录时说「没有作业」会让人以为清单是空的（也就是「进不去」），
+                    // 实际是压根没同步过
+                    !signedIn -> "还没登录 · 点下面的「登录学习通」"
+                    tab == 0 -> "没有未完成的作业或考试"
+                    else -> "还没有已完成的记录"
+                },
                 palette = palette,
                 onOpen = onOpenTask,
                 action = if (tab == 0) {
