@@ -194,10 +194,19 @@ internal fun ChaoxingScreen(modifier: Modifier = Modifier) {
         }
         if (wanted.isNotEmpty()) {
             val manager = CookieManager.getInstance()
+            // 只补「这个域还没有的」项：快手机会话可能已经刷新过，用快照里的旧
+            // JSESSIONID 盖掉新的，反而会把本来能用的登录态弄失效
+            val present = manager.getCookie(target).orEmpty()
+                .split(';')
+                .mapNotNull { it.substringBefore('=', "").trim().ifEmpty { null } }
+                .toSet()
             val head = CookieSnapshot.mergeHead(wanted.map { it.second })
             head.split(';').forEach { piece ->
                 val kv = piece.trim()
-                if (kv.isNotEmpty()) manager.setCookie(target, kv)
+                if (kv.isEmpty()) return@forEach
+                val name = kv.substringBefore('=', "").trim()
+                if (name.isEmpty() || present.contains(name)) return@forEach
+                manager.setCookie(target, kv)
             }
             manager.flush()
         }
